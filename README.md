@@ -23,7 +23,7 @@ Thanks [Herman Sletmoen](https://github.com/hersle) and his [leaflet-route-print
 It helped me with basic concept and page calculations and positioning.
 
 This plugin is implemented as UI-less component.
-It gives you more flexibility for integration plugin to your application 
+It gives you more flexibility in integration to your application 
 You can implement your own UI control or took it from an example (see examples folder), 
 that was borrowed from [leaflet-route-print](https://hersle.github.io/leaflet-route-print/) with some refactoring. 
 
