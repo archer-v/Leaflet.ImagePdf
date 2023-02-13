@@ -9,6 +9,7 @@ L.Control.PdfControl = L.Control.extend({
 	options: {
 		position: "topleft",
 		pdf: null,
+		fileName: "example.pdf"
 	},
 
 	initialize: function(options) {
@@ -125,7 +126,7 @@ L.Control.PdfControl = L.Control.extend({
 		p.append(this.inputPrint, l);
 		container.append(p);
 
-		this.downloadLink = this._createElement("a", {"download": "route.pdf"}, {"display": "none"});
+		this.downloadLink = this._createElement("a", {"download": this.options.fileName}, {"display": "none"});
 		container.append(this.downloadLink);
 
 		divControls.append(container);
@@ -228,6 +229,13 @@ L.Control.PdfControl = L.Control.extend({
 		}
 
 		let pd = this.pdf.showPages()
+
+		if (pd === null) {
+			this.inputDPI.innerHTML = ""
+			this.inputPages.value = ""
+			this.setPrintStatus(`area isn't defined`);
+			return
+		}
 
 		this.inputDPI.innerHTML = `${pd.dpi} DPI`;
 
