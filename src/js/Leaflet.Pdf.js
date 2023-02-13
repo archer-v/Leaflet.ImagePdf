@@ -27,12 +27,16 @@ L.Control.Pdf = L.Control.extend({
         pagePreviewStrokeColor: "gray",
         pagePreviewFillColor: "gray",
         pdfFontSize: 15, // default font size of text labels
-        pdfPageCb: null, // callback function(pdf, pageNumber) that calls on every pdf page generation
-                         // you can use it to add you custom text or data to pdf pages (see jspdf spec on how to operate with pdf document)
         pdfPrintPageNumber: true,
         pdfPrintGraticule: true, // isn;t implemented
         pdfPrintScaleMeter: true, // isn;t implemented
-        pdfAttributionText: "Printed with Leaflet.Pdf"
+        pdfAttributionText: "Printed with Leaflet.Pdf",
+        pdfDocumentProperties: {}, // properties to add to the PDF document // property_name-to-property_value object structure
+        skipNodesWithCSS: ['div.leaflet-control-container', 'div.control-pane-wrapper'],
+        pdfPageCb: null, // callback function(pdf, pageNumber) that calls on every pdf page generation
+                         // you can use it to add you custom text or data to pdf pages (see jspdf spec on how to operate with pdf document)
+        nodeFilterCb: null, // callback function(domNode) that calls on every dom element and should return true or false
+                            // in order to include or exclude element from pdf
     },
 
     initialize: function (map, options) {
@@ -118,11 +122,16 @@ L.Control.Pdf = L.Control.extend({
     },
     /**
      *
-     * @returns {{rects: array, ppxWorld: number}}
+     * @returns {object}
      */
     computePages: function () {
         if (this.area === null)
             return null;
+
+        if (this.area._map === null) {
+            // object is not added to the map (or removed)
+            return null;
+        }
 
         let pd = Object.assign({rects:[], ppxWorld: 0}, this._computeOrientedPageSize())
 
@@ -181,7 +190,11 @@ L.Control.Pdf = L.Control.extend({
             return;
 
         let printData = this.computePages()
-        this._showPageRectangles(printData.rects, printData.ppxWorld)
+        if (printData) {
+            this._showPageRectangles(printData.rects, printData.ppxWorld)
+        } else {
+            this.hidePages()
+        }
         return printData
     },
 
@@ -211,7 +224,7 @@ L.Control.Pdf = L.Control.extend({
     },
 
     _disableInput: function() {
-        console.log("input disabled");
+        //console.log("input disabled");
         this.map.boxZoom.disable();
         this.map.doubleClickZoom.disable();
         this.map.dragging.disable();
@@ -222,7 +235,7 @@ L.Control.Pdf = L.Control.extend({
     },
 
     _enableInput: function() {
-        console.log("input enabled");
+        //console.log("input enabled");
         this.map.boxZoom.enable();
         this.map.doubleClickZoom.enable();
         this.map.dragging.enable();
@@ -290,6 +303,9 @@ L.Control.Pdf = L.Control.extend({
                 if (pdf == null) {
                     pdf = new jspdf.jsPDF({format: [w, h], orientation: orientation, compress: true});
                     pdf.setFontSize(this.options.pdfFontSize);
+                    if (this.options.pdfDocumentProperties !== null && Object.keys(this.options.pdfDocumentProperties).length > 0) {
+                        pdf.setDocumentProperties(this.options.pdfDocumentProperties)
+                    }
                 }  else {
                     pdf.addPage([w, h], orientation);
                 }
@@ -301,6 +317,9 @@ L.Control.Pdf = L.Control.extend({
                     pdf.text(`Page ${pd.pagesToPrint[i]+1} of ${pd.pageCount}`, w-5, 0+5, {align: "right", baseline: "top"});
                 }
 
+                if (this.options.pdfPageCb && typeof this.options.pdfPageCb === "function") {
+                    this.options.pdfPageCb(pdf, pd.pagesToPrint[i])
+                }
                 //pdf.text(`Scale ${pd.sPaper} : ${pd.sWorld}`, 0+5, h-5, {align: "left", baseline: "bottom"});
                 //let attrib = this._getAttribution();
                 //if (attrib) {
@@ -338,12 +357,26 @@ L.Control.Pdf = L.Control.extend({
             document.dispatchEvent(new Event("pdf:imagesCompleted"));
         }.bind(this)
 
-        // filter out from printing all leaflet control elements (buttons, dialogs, etc)
-        let filter = function (node) {
-            return ! (node.tagName === 'DIV' &&
-                (node.classList.contains('leaflet-control-container') || node.classList.contains('control-pane-wrapper'))
-            );
-        }
+        // filter out from printing some elements (buttons, dialogs, etc)
+        let filter = function (nodeElement) {
+            //console.log(node.nodeName + "." + node.className)
+            if (nodeElement.matches)
+                for (let s of this.options.skipNodesWithCSS) {
+                    if (nodeElement.matches(s))
+                        return false
+                }
+            if (this.options.nodeFilterCb && typeof this.options.nodeFilterCb === "function")
+                return this.options.nodeFilterCb(nodeElement)
+/*
+
+            if (nodeElement.tagName === 'DIV') {
+                if (nodeElement.classList.contains('leaflet-control-container') || nodeElement.classList.contains('control-pane-wrapper')) {
+                    return false
+                }
+            }
+ */
+            return true
+        }.bind(this)
 
         let imageGenerator = function () {
             throw ("image generator isn't implemented")
@@ -367,7 +400,12 @@ L.Control.Pdf = L.Control.extend({
                     pd.images.push(dataUrl);
                     document.dispatchEvent(new CustomEvent("pdf:startNextImage", {detail: {i:i+1}}))
                     //createImage(i+1);
-                }.bind(this));
+                }.bind(this))
+                .catch(function (er) {
+                    this.fireAborted("internal error")
+                    this.status = StatusAborted
+                    finish()
+                });
         }.bind(this)
 
         let prepareDocumentForImaging = function(ev) {
