@@ -1,13 +1,3 @@
 body {
 	margin: 0;
 }
-
-/* from https://stackoverflow.com/a/23741073/3527139 */
-/* TODO: move to javascript to not require this file */
-form   { display: table;      }
-p      { display: table-row;  }
-label  { display: table-cell; font-weight: bold; vertical-align: middle; }
-input  { display: table-cell; }
-button { display: table-cell; }
-
-/* .leaflet-tile { border: solid black 5px; } */ /* show tile borders */
