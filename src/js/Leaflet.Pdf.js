@@ -1,6 +1,6 @@
 import "jspdf";
 import {
-    coverLineWithRectangles,
+    coverLineWithRectangles, coverAreaWithRectangles
 } from "./cover-line.js";
 
 const DEBUG = false;
@@ -153,10 +153,13 @@ L.Control.Pdf = L.Control.extend({
 
         pd.rects = []
         pd.images = []
-        if ( this.area instanceof L.Polyline) {
+        if ( this.area instanceof L.Polygon) {
+            pd.rects = this._getBoxRectangles(this.area.getBounds(), pd.wpxWorld, pd.hpxWorld, pd.ppxWorld, this.pageOrientation);
+        } else if ( this.area instanceof L.Polyline) {
             pd.rects = this._getRouteRectangles(this.area.getLatLngs(), pd.wpxWorld, pd.hpxWorld, pd.ppxWorld, this.pageOrientation);
         } else {
-            pd.rects = this.getBoxRectangles(this.area.getBounds(), pd.wpxWorld, pd.hpxWorld, pd.ppxWorld, this.pageOrientation);
+            console.log("unknown geometry type")
+            return null
         }
 
         // pad rectangles with margin
@@ -584,12 +587,21 @@ L.Control.Pdf = L.Control.extend({
         }
     },
 
+    _getBoxRectangles: function (bounds, w, h, p, o) {
+        let topLeft = this.map.project(bounds.getNorthWest())
+        let bottomRight = this.map.project(bounds.getSouthEast())
+
+        const rects = coverAreaWithRectangles(topLeft, bottomRight, w-2*p, h-2*p)
+
+        return rects
+    },
+
     _getRouteRectangles: function(ll, w, h, p, o) {
         if (ll.length === 0) {
             return [];
         }
         if (ll[0] instanceof Array) {
-            // multidimensional array, need flatten, multipath ?
+            // multidimensional array (possible multipath ? )
             // we will get only first path
             ll = ll[0]
         }

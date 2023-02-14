@@ -1,11 +1,11 @@
 export function coverLineWithRectangles(l, w, h, mix) {
-    var rects = [];
-    var intersections = [];
-    var i1 = 0;
+    let rects = [];
+    let intersections = [];
+    let i1 = 0;
     while (true) {
-        var [rect, i2, intersection, dist] = coverLineWithRectangle(l, w, h, i1);
+        let [rect, i2, intersection, dist] = coverLineWithRectangle(l, w, h, i1);
         if (mix) {
-            var [recthw, i2hw, intersectionhw, disthw] = coverLineWithRectangle(l, h, w, i1);
+            let [recthw, i2hw, intersectionhw, disthw] = coverLineWithRectangle(l, h, w, i1);
             rect.rotated = false;
             if (disthw > dist) {
                 [rect, i2, intersection, dist] = [recthw, i2hw, intersectionhw, disthw];
@@ -23,13 +23,43 @@ export function coverLineWithRectangles(l, w, h, mix) {
     return [rects, intersections];
 }
 
+/**
+ *
+ * @param tlc {L.LatLng} top left corner
+ * @param brc {L.LatLng} top right corner
+ * @param w - width in points
+ * @param h - height in points
+ */
+export function coverAreaWithRectangles(tlc, brc, w, h) {
+
+    let rects = []
+    let totalW = brc.x - tlc.x
+    let totalH = brc.y - tlc.y
+
+    let wPages = Math.ceil(totalW / w)
+    let hPages = Math.ceil(totalH / h)
+
+    let startX = tlc.x
+    let startY = tlc.y
+
+    // cover are with rectangles
+    for (let i = 0; i < hPages; i++) {
+        for (let j = 0; j < wPages; j++) {
+            let x = startX + j * w
+            let y = startY + i * h
+            rects.push(new Rectangle(L.point(x, y), L.point(x + w, y + h)))
+        }
+    }
+    return rects
+}
+
 function coverLineWithRectangle(l, w, h, i1) {
-    var rect = new Rectangle(l[i1], l[i1]);
-    var segment;
-    var intersection = undefined;
-    var dist = 0;
-    for (var i = i1+1; i < l.length && intersection === undefined; i++) {
-        var grect = rect.extend(l[i]);
+    let rect = new Rectangle(l[i1], l[i1]);
+    let segment;
+    let intersection = undefined;
+    let dist = 0;
+    for (let i = i1+1; i < l.length && intersection === undefined; i++) {
+        let grect = rect.extend(l[i]);
         segment = new Segment(l[i-1], l[i]);
         if (grect.isSmallerThan(w, h)) { // whole segment fits in rectangle [w,h]
             rect = grect;
@@ -81,7 +111,7 @@ class Rectangle {
         let maxRect;
         if (d.x >= 0 && d.y >= 0) { // north-east quadrant
             maxRect = new Rectangle(L.point(this.xmin, this.ymin), L.point(this.xmin+w, this.ymin+h));
-        } else if (d.x < 0 && d.y > 0) { // north-west quadrant
+        } else if (d.x < 0 && d.y >= 0) { // north-west quadrant
             maxRect = new Rectangle(L.point(this.xmax-w, this.ymin), L.point(this.xmax, this.ymin+h));
         } else if (d.x < 0 && d.y < 0) { // south-west quadrant
             maxRect = new Rectangle(L.point(this.xmax-w, this.ymax-h), L.point(this.xmax, this.ymax));
