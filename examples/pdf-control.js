@@ -22,8 +22,8 @@ L.Control.PdfControl = L.Control.extend({
 		document.head.appendChild(this.css)
 		this.css.sheet.insertRule('.pdf-control form { display: table; }');
 		this.css.sheet.insertRule('.pdf-control p { display: table-row;}');
-		this.css.sheet.insertRule('.pdf-control label { display: table-cell; font-weight: bold; vertical-align: middle; }');
-		this.css.sheet.insertRule('.pdf-control input { display: table-cell; }');
+		this.css.sheet.insertRule('.pdf-control p > label { display: table-cell; font-weight: bold; vertical-align: middle; }');
+		this.css.sheet.insertRule('.pdf-control p > input { display: table-cell; }');
 		this.css.sheet.insertRule('.pdf-control button { display: table-cell; }');
 	},
 
@@ -44,15 +44,6 @@ L.Control.PdfControl = L.Control.extend({
 		var divControls = this._createElement("div", {}, {borderSpacing: "5px"});
 		var container = this._createElement("form", {className: "text-input"});
 
-		this.inputScale = this._createElement("input", {id: "input-scale-world", type: "number", defaultValue: this.pdf.getScale()}, {width: "6em"});
-		this.inputDPI = this._createElement("span", {id: "input-dpi"}, {fontWeight: "bold"});
-		var l = this._createElement("label", {innerHTML: "Scale:", for: this.inputScale.id});
-		l.title = "Paper-to-World scale and resolution of the printed raster map in Dots Per Inch (DPI). The color of the DPI value indicates the expected print quality, from worst (0, red) to best (300, green). Hover on the labels below to see more help information.";
-		l.style.cursor = "help";
-		var p = this._createElement("p");
-		p.append(l, "1 : ", this.inputScale, " (", this.inputDPI, ")");
-		container.append(p);
-
 		this.inputWidth = this._createElement("input", {id: "input-size-width", type: "number", defaultValue: 210}, {width: "3.5em"});
 		this.inputHeight = this._createElement("input", {id: "input-size-height", type: "number", defaultValue: 297}, {width: "3.5em"});
 		this.inputPreset  = this._createElement("select", {id: "input-size-preset"});
@@ -66,7 +57,7 @@ L.Control.PdfControl = L.Control.extend({
 			}
 			id++
         }
-		l = this._createElement("label", {innerHTML: "Paper:", for: this.inputWidth.id + " " + this.inputHeight.id});
+		var l = this._createElement("label", {innerHTML: "Paper:", for: this.inputWidth.id + " " + this.inputHeight.id});
 		l.title = "Physical paper size. Enter manually or select a preset (P = Portrait, L = Landscape).";
 		l.style.cursor = "help";
 		p = this._createElement("p");
@@ -90,19 +81,88 @@ L.Control.PdfControl = L.Control.extend({
 		p.append(l, this.inputMargin, " mm ");
 		container.append(p);
 
+		/*
+		this.inputPagingByScale = this._createElement("input", {id: "input-pages-split-scale", type: "radio", name: "pages-split-method", value: "scale"})
+		this.inputPagingByPageCount = this._createElement("input", {id: "input-pages-split-pages", type: "radio", name: "pages-split-method", value: "pages"})
+		l = this._createElement("label", {innerHTML: "Split to pages"});
+		l.title = "Method of pages disposition: according to defined pages count or map scale value";
+		l.style.cursor = "help";
+		var p = this._createElement("p");
+		let l1 = this._createElement("label", {});
+		l1.append(
+			this.inputPagingByScale,
+			this._createElement("label", {innerHTML: "by scale ", for: this.inputPagingByScale.id}),
+			this.inputPagingByPageCount,
+			this._createElement("label", {innerHTML: "by pages count ", for: this.inputPagingByPageCount.id}),
+		)
+		p.append(l, l1);
+		container.append(p);
+
+		 */
+		this.inputScale = this._createElement(
+			"input",
+			{
+				id: "input-scale-world",
+				type: "number",
+				defaultValue: this.pdf.getScale(),
+				disabled: this.pdf.options.pagingMethod !== 'scale'
+			},
+			{width: "6em"});
+		l = this._createElement("label", {innerHTML: "Scale:", for: this.inputScale.id});
+		l.title = "Paper-to-World scale and resolution of the printed raster map in Dots Per Inch (DPI). The color of the DPI value indicates the expected print quality, from worst (0, red) to best (300, green). Hover on the labels below to see more help information.";
+		l.style.cursor = "help";
+		var p = this._createElement("p");
+		p.append(l, "1 : ", this.inputScale);
+		container.append(p);
+
+		this.inputDPI = this._createElement("span", {id: "input-dpi"}, {fontWeight: "bold"});
+		this.pagePixelSize = this._createElement("span", {});
+		this.inputPages = this._createElement(
+			"input",
+			{
+				id: "input-pages-to-create",
+				type: "number",
+				defaultValue: this.pdf.getPageCount(),
+				disabled: this.pdf.options.pagingMethod !== 'pages'},
+			{width: "3em"});
+		l = this._createElement("label", {innerHTML: "Pages:", for: this.inputPages.id});
+		l.title = "Split area to N pages";
+		l.style.cursor = "help";
+		var p = this._createElement("p");
+		p.append(l, this.inputPages,
+			" at ",
+			this.pagePixelSize,
+			" pixels",
+			" (", this.inputDPI, ")"
+		);
+		container.append(p);
+
+		//this.totalPages = this._createElement("span", {});
+/*
+		p = this._createElement("p", {}, {borderTop: "1px solid grey"});
+		p.append(
+			this._createElement("label", {innerHTML: "Pages: "}),
+			this.totalPages,
+			" at ",
+			this.pagePixelSize,
+			" pixels",
+			" (", this.inputDPI, ")"
+			);
+		container.append(p);
+ */
 		this.inputPrint = this._createElement("input", {id: "input-print", type: "button", value: "Print"}, {display: "inline", fontWeight: "bold", backgroundColor: "limegreen", borderRadius: "5px", border: "none"});
 		this.inputPrint.title = "Print the map as a PDF file and automatically open it when complete.";
 		this.printStatus = this._createElement("span", {});
-		this.inputPages = this._createElement("input", {id: "input-pages", type: "text"});
-		this.inputPages.title = "Comma-separated list of (ranges of) pages to print. For example, \"1, 3-5, 7\" prints page 1, 3, 4, 5 and 7. Clear to reset to all pages.";
-		this.inputPages.addEventListener("change", function() {
-			if (this.inputPages.value === "") {
+		this.inputPagesToPrint = this._createElement("input", {id: "input-pages", type: "text"});
+		this.inputPagesToPrint.title = "Comma-separated list of (ranges of) pages to print. For example, \"1, 3-5, 7\" prints page 1, 3, 4, 5 and 7. Clear to reset to all pages.";
+		this.inputPagesToPrint.addEventListener("change", function() {
+			if (this.inputPagesToPrint.value === "") {
 				// if user clears the field, fill it automatically
 				this.pdf.setPagesToPrint()
 			} else {
 				//update list of pages to print
 				let pages = [];
-				let matches = this.inputPages.value.match(/\d+(-\d+)?/g);
+				let matches = this.inputPagesToPrint.value.match(/\d+(-\d+)?/g);
 				if (matches && matches.length > 0) {
 					for (const match of matches) {
 						let s = match.split("-");
@@ -117,14 +177,15 @@ L.Control.PdfControl = L.Control.extend({
 			}
 			this.previewRoute(); // update this field
 		}.bind(this));
-		this.inputPages.addEventListener("input", function() {
-			this.inputPages.style.width = `${this.inputPages.value.length}ch`;
+		this.inputPagesToPrint.addEventListener("input", function() {
+			this.inputPagesToPrint.style.width = `${this.inputPagesToPrint.value.length}ch`;
 		}.bind(this));
 		l = this._createElement("label", {}, {fontWeight: "normal"});
-		l.append(" pages ", this.inputPages, this.printStatus);
+		l.append(" pages to print ", this.inputPagesToPrint, this.printStatus);
 		p = this._createElement("p");
 		p.append(this.inputPrint, l);
 		container.append(p);
+
 
 		this.downloadLink = this._createElement("a", {"download": this.options.fileName}, {"display": "none"});
 		container.append(this.downloadLink);
@@ -135,7 +196,7 @@ L.Control.PdfControl = L.Control.extend({
 
 		var divButton = this._createElement("div", {}, {display: "flex", justifyContent: "space-between", borderBottom: "1px solid black"}); // float left and right using https://stackoverflow.com/a/10277235
 
-		var header = this._createElement("p", {innerHTML: "<b>Print route settings</b>"}, {margin: "0", fontSize: "13px", padding: divControls.style.borderSpacing}); // padding should be same as borderSpacing in divControls
+		var header = this._createElement("p", {innerHTML: "<b>Pages settings</b>"}, {margin: "0", fontSize: "13px", padding: divControls.style.borderSpacing}); // padding should be same as borderSpacing in divControls
 		var button = this._createElement("a", {innerHTML: "✖", href: "#"}, {display: "inline-block", width: "30px", height: "30px", lineHeight: "30px", fontSize: "22px"});
 		var help = this._createElement("a", {innerHTML: "?", title: "You get what you see! Zoom the map to your preferred level of detail, modify these settings and hit Print. The color of the DPI value indicates the print quality.", href: "#"}, {display: "inline-block", width: "30px", height: "30px", lineHeight: "30px", fontSize: "22px", cursor: "help"});
 		button.addEventListener("click", function() {
@@ -158,6 +219,7 @@ L.Control.PdfControl = L.Control.extend({
 		divWrapper.append(divButton, divControls);
 
 		this.inputScale.addEventListener("change", this.previewRoute.bind(this));
+		this.inputPages.addEventListener("change", this.previewRoute.bind(this));
 		this.inputWidth.addEventListener("change", function () {
 			this.inputPreset.selectedIndex = 0
 			this.previewRoute()
@@ -213,7 +275,12 @@ L.Control.PdfControl = L.Control.extend({
 		}
 
 		// update common pdf options
-		this.pdf.setScale(this.inputScale.value)
+
+		if (this.pdf.options.pagingMethod === "scale") {
+			this.pdf.setScale(this.inputScale.value)
+		} else {
+			this.pdf.setPageCount(this.inputPages.value)
+		}
 		let o = this.inputOrientation.value
 		for (o of this.pdf.getPageOrientations()) {
 			if (o.name === this.inputOrientation.value) {
@@ -232,18 +299,26 @@ L.Control.PdfControl = L.Control.extend({
 
 		if (pd === null) {
 			this.inputDPI.innerHTML = ""
-			this.inputPages.value = ""
+			this.inputPagesToPrint.value = ""
 			this.setPrintStatus(`area isn't defined`);
 			return
 		}
 
 		this.inputDPI.innerHTML = `${pd.dpi} DPI`;
 
+		if (this.pdf.options.pagingMethod === "scale") {
+			this.inputPages.value = pd.rects.length
+		}
+		if (this.pdf.options.pagingMethod === "pages") {
+			this.inputScale.value = parseInt(pd.sWorld)
+		}
+		this.pagePixelSize.innerHTML = `${Math.floor(pd.wpxWorld)} x ${Math.floor(pd.hpxWorld)}`
+
 		if (pd.pagesToPrint.length === pd.rects.length) {
-			this.inputPages.value = `1-${pd.rects.length}`;
+			this.inputPagesToPrint.value = `1-${pd.rects.length}`;
 		}
 
-		this.inputPages.style.width = `${this.inputPages.value.length}ch`;
+		this.inputPagesToPrint.style.width = `${this.inputPagesToPrint.value.length}ch`;
 
 		// indicate print quality with color
 		var dpi1 = 0, hue1 = 0;     // horrible print quality  (red)
@@ -252,7 +327,7 @@ L.Control.PdfControl = L.Control.extend({
 		this.inputDPI.style.color = `hsl(${hue}, 100%, 50%)`;
 
 		//var dpi = Math.floor((wpxWorld / (wmmPaper / 25.4) + hpxWorld / (hmmPaper / 25.4)) / 2);
-		this.setPrintStatus(`at ${Math.floor(pd.wpxWorld)} x ${Math.floor(pd.hpxWorld)} pixels`);
+		this.setPrintStatus();
 	},
 
 	printRoute: function() {

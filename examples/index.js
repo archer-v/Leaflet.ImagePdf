@@ -45,7 +45,8 @@ L.control.scale({metric: true, imperial: false}).addTo(map);
 map.setView([0, 0], 2);
 
 let pdfFactory = L.pdf(map, {
-	pageFormat: "A3"
+	pageFormat: "A3",
+	debug: true,
 })
 
 pdfControl = new L.Control.PdfControl({pdf: pdfFactory}).addTo(map);
