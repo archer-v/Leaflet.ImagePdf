@@ -24,7 +24,13 @@ L.Control.GeometrySelector = L.Control.extend({
         this.inputLayer.replaceChildren()
         let i = 1
         for (let g of this.geometries) {
-            this.inputLayer.append(new Option(`geometry ${i}`));
+            let type = ""
+            if (g instanceof L.Polygon) {
+                type = "(Area)"
+            } else if (g instanceof L.Polyline) {
+                type = "(Route)"
+            }
+            this.inputLayer.append(new Option(`Geometry ${i} ${type}`));
             i++
         }
     },
@@ -48,7 +54,7 @@ L.Control.GeometrySelector = L.Control.extend({
             this.setGeometry(event.target.selectedIndex)
         }.bind(this));
 
-        var divWrapper = this._createElement("div", {className: "leaflet-bar leaflet-control"}, {backgroundColor: "white"});
+        var divWrapper = this._createElement("div", {className: "leaflet-bar leaflet-control pdf-control"}, {backgroundColor: "white"});
         var divHeader = this._createElement("div", {}, {display: "flex", justifyContent: "space-between", borderBottom: "1px solid black"});
 
         var header = this._createElement("p", {innerHTML: "<b>Geometry selector</b>"}, {margin: "0", fontSize: "13px", padding: divControls.style.borderSpacing});
