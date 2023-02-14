@@ -1,7 +1,7 @@
 import "jspdf";
 import {
-    coverLineWithRectangles, coverAreaWithRectangles
-} from "./cover-line.js";
+    coverLineWithRectangles, coverAreaWithRectangles, areaRectanglesCount
+} from "./covering.js";
 
 const DEBUG = false;
 export const PageOrientationPortrait = 0
@@ -20,7 +20,10 @@ L.Control.Pdf = L.Control.extend({
         pageFormat: "A4",
         pageOrientation: PageOrientationPortrait,
         pageMargin: 10, //mm
+        areaPadding: 10, //mm add padding to the area
         scale: 50000,
+        pagingMethod: 'pages', // define paging method (possible values 'pages' | 'scale')
+        pageCount: 1,
         pdfFileName: "map.pdf",
         tilesLoadingTimeout: 10000, // 10 sec
         imageFormat: "jpeg",
@@ -37,6 +40,7 @@ L.Control.Pdf = L.Control.extend({
                          // you can use it to add you custom text or data to pdf pages (see jspdf spec on how to operate with pdf document)
         nodeFilterCb: null, // callback function(domNode) that calls on every dom element and should return true or false
                             // in order to include or exclude element from pdf
+        debug: false,
     },
 
     initialize: function (map, options) {
@@ -65,6 +69,12 @@ L.Control.Pdf = L.Control.extend({
         // keep all page rectangles in one group
         this.rectGroup = L.layerGroup();
 
+        if (this.options.debug) {
+            this.debugRectGroup = L.layerGroup()
+            this.debugRectGroup.addTo(map)
+            this.debugRectStyle = {stroke: true, weight: 1, opacity: 0.8, color: "green", fillColor: "green", fillOpacity: 0.2};
+        }
+
         /*
         this.downloadLink = document.createElement("a")
         Object.assign(this.downloadLink, {"download": this.defaultPdfFileName});
@@ -87,6 +97,7 @@ L.Control.Pdf = L.Control.extend({
         this.setPageOrientation(this.options.pageOrientation)
         this.setPageMargin(this.options.pageMargin)
         this.setPagesToPrint([])
+        this.setPageCount(this.options.pageCount)
     },
 
     destroy: function () {
@@ -94,17 +105,8 @@ L.Control.Pdf = L.Control.extend({
         this.map.removeLayer(this.rectGroup);
     },
 
-    _computeOrientedPageSize: function () {
-        let w = this.pageSize.width;
-        let h = this.pageSize.height;
-        if (this.pageOrientation === PageOrientationLandscape) { // swap width <-> height
-            let wtmp = w; w = h; h = wtmp;
-        }
-        return {w: w, h: h}
-    },
-
     pageSizes: function() {
-    // list paper sizes from https://en.wikipedia.org/wiki/Paper_size#Overview_of_ISO_paper_sizes
+        // list paper sizes from https://en.wikipedia.org/wiki/Paper_size#Overview_of_ISO_paper_sizes
         let paperSizes = [];
         let w = 0;
         let h = 0;
@@ -120,6 +122,128 @@ L.Control.Pdf = L.Control.extend({
         }
         return paperSizes
     },
+
+    /**
+     * Returns current page size based on page orientation
+     * @returns {{width: number, height: number}}
+     * @private
+     */
+    _orientedPageSize: function () {
+        let w = this.pageSize.width;
+        let h = this.pageSize.height;
+        if (this.pageOrientation === PageOrientationLandscape) { // swap width <-> height
+            let wtmp = w; w = h; h = wtmp;
+        }
+        return {width: w, height: h}
+    },
+
+    /**
+     *
+     * @returns {object}
+     * @private
+     */
+    _pageData: function (scale, wmmPaper, hmmPaper) {
+        let pd = {
+            sPaper: 1,
+            sWorld: (scale != null) ? scale : this.scale,
+            wmmPaper: wmmPaper,
+            hmmPaper: hmmPaper,
+            pmmPaper: this.pageMargin,
+            regionCenter: this.area.getCenter(), //center of area
+        }
+
+        pd.paperToWorld = pd.sPaper / pd.sWorld;
+        pd.worldToPaper = 1 / pd.paperToWorld;
+        pd.wmmWorld = pd.wmmPaper * (pd.sWorld / pd.sPaper);
+        pd.hmmWorld = pd.hmmPaper * (pd.sWorld / pd.sPaper);
+        pd.pmmWorld = pd.pmmPaper * (pd.sWorld / pd.sPaper);
+
+        // page dimension in points at current map zoom level
+        pd.wpxWorld = this.metersToPixels(pd.wmmWorld / 1000, pd.regionCenter);
+        pd.hpxWorld = this.metersToPixels(pd.hmmWorld / 1000, pd.regionCenter);
+        // page margin
+        pd.ppxWorld = this.metersToPixels(pd.pmmWorld / 1000, pd.regionCenter);
+
+        pd.dpi = Math.round(this.scaleToDPI(pd.sWorld));
+        // area padding in points at current map zoom level
+        pd.appx = this.metersToPixels(this.options.areaPadding * (pd.sWorld / pd.sPaper) / 1000, pd.regionCenter);
+
+        return pd
+    },
+
+    computeScaleAccordingPageCount: function (pageCount = 1) {
+
+        pageCount *= 1
+        let pageSize = this._orientedPageSize()
+        let bounds = this.area.getBounds()
+        let topLeft = this.map.project(bounds.getNorthWest())
+        let bottomRight = this.map.project(bounds.getSouthEast())
+        let areaW = bottomRight.x - topLeft.x // area width in points
+        let areaH = bottomRight.y - topLeft.y
+        let pd = this._pageData(this.scale, pageSize.width, pageSize.height)
+        // computes scale we need to use in order the area fits into one page
+        let onePagesScaleW = Math.ceil(pd.sPaper * (this.pixelsToMeters(areaW, pd.regionCenter)) * 1000 / (pd.wmmPaper - pd.pmmPaper * 2 - this.options.areaPadding * 2))
+        let onePagesScaleH = Math.ceil(pd.sPaper * (this.pixelsToMeters(areaH, pd.regionCenter)) * 1000 / (pd.hmmPaper - pd.pmmPaper * 2 - this.options.areaPadding * 2))
+        let onePagesScale = Math.max(onePagesScaleW, onePagesScaleH)
+
+
+        if (this.options.debug) {
+            let rect = [this.map.unproject(topLeft), this.map.unproject(bottomRight)];
+            L.rectangle(rect, this.debugRectStyle).addTo(this.debugRectGroup);
+        }
+
+        if (pageCount === 1)
+            return onePagesScale
+
+        let areaPageCount = function (scale) {
+            let pd = this._pageData(scale, pageSize.width, pageSize.height)
+            let [rows, cols] = areaRectanglesCount(topLeft.subtract([pd.appx, pd.appx]), bottomRight.add([pd.appx, pd.appx]), pd.wpxWorld - 2 * pd.ppxWorld, pd.hpxWorld - 2 * pd.ppxWorld)
+            return rows * cols
+        }.bind(this)
+
+        let iterations = 0;
+        let scale = onePagesScale
+        let step = -scale / 2
+        let bestScale = 0
+        while (step > 10 || step < - 10) {
+            let switchDirection = false
+            iterations++
+            let c = areaPageCount(scale)
+            if (c > pageCount) {
+                switchDirection = (step < 0)
+            } else if (c < pageCount) {
+                switchDirection = (step > 0)
+            } else {
+                bestScale = scale
+                step = Math.abs(step) * -1
+            }
+            // need to switch direction and decrease the step
+            if (switchDirection)
+                step = -step / 2
+            if (scale + step < 1) {
+                step = step / 2
+            }
+            scale = scale + step
+            if (iterations > 1000) {
+                console.error("something got wrong, to much iterations")
+                break
+            }
+        }
+        if (bestScale > 0)
+            scale = bestScale
+        console.log(`iterations: ${iterations}`)
+        return Math.ceil(scale)
+    },
+
+    rectanglesEvaluationMethod: function (LObject) {
+        if ( LObject instanceof L.Polygon || (LObject instanceof L.Polyline && this.isPagesPaging() && this.pageCount == 1)) {
+            return this._getBoxRectangles.bind(this)
+        } else if ( LObject instanceof L.Polyline) {
+            return this._getRouteRectangles.bind(this)
+        }
+        console.log("unknown geometry type")
+        return null
+    },
     /**
      *
      * @returns {object}
@@ -133,46 +257,37 @@ L.Control.Pdf = L.Control.extend({
             return null;
         }
 
-        let pd = Object.assign({rects:[], ppxWorld: 0}, this._computeOrientedPageSize())
+        if (this.options.debug) {
+            this.debugRectGroup.clearLayers();
+        }
 
-        pd.sPaper = 1;
-        pd.sWorld = this.scale;
-        pd.wmmPaper = pd.w;
-        pd.hmmPaper = pd.h;
-        pd.pmmPaper = this.pageMargin;
-        pd.paperToWorld = pd.sPaper / pd.sWorld;
-        pd.worldToPaper = 1 / pd.paperToWorld;
-        pd.wmmWorld = pd.wmmPaper * (pd.sWorld / pd.sPaper);
-        pd.hmmWorld = pd.hmmPaper * (pd.sWorld / pd.sPaper);
-        pd.pmmWorld = pd.pmmPaper * (pd.sWorld / pd.sPaper);
+        let scale = this.scale
+        if (this.isPagesPaging()) {
+            scale = this.computeScaleAccordingPageCount(this.pageCount)
+        }
 
-        pd.regionCenter = this.area.getCenter();
-        pd.wpxWorld = this.metersToPixels(pd.wmmWorld / 1000, pd.regionCenter);
-        pd.hpxWorld = this.metersToPixels(pd.hmmWorld / 1000, pd.regionCenter);
-        pd.ppxWorld = this.metersToPixels(pd.pmmWorld / 1000, pd.regionCenter);
+        let pageSize = this._orientedPageSize()
+        let pd = this._pageData(scale, pageSize.width, pageSize.height)
 
         pd.rects = []
         pd.images = []
-        if ( this.area instanceof L.Polygon) {
-            pd.rects = this._getBoxRectangles(this.area.getBounds(), pd.wpxWorld, pd.hpxWorld, pd.ppxWorld, this.pageOrientation);
-        } else if ( this.area instanceof L.Polyline) {
-            pd.rects = this._getRouteRectangles(this.area.getLatLngs(), pd.wpxWorld, pd.hpxWorld, pd.ppxWorld, this.pageOrientation);
-        } else {
-            console.log("unknown geometry type")
-            return null
-        }
+
+        let getRectangles = this.rectanglesEvaluationMethod(this.area)
+
+        if (typeof getRectangles === "function")
+            pd.rects = getRectangles(this.area, pd.wpxWorld, pd.hpxWorld, pd.ppxWorld, pd.appx, this.pageOrientation)
 
         // pad rectangles with margin
         for (let i = 0; i < pd.rects.length; i++) {
-            let rotated = pd.rects[i].rotated; // property is destroyed in the padding
+            let rotated = pd.rects[i].rotated; // property is destroyed after padding
             pd.rects[i] = pd.rects[i].pad(pd.ppxWorld);
             pd.rects[i].rotated = rotated;
         }
 
-        pd.dpi = Math.round(this.scaleToDPI());
         pd.pageCount = pd.rects.length
         pd.pagesToPrint = []
 
+        // prepare list of page numbers to print if pagesToPrintDefined
         if (this.pagesToPrintDefined.length > 0) {
             for (let p = 0; p < pd.rects.length; p++) {
                 if (this.pagesToPrintDefined.includes(p))
@@ -525,13 +640,13 @@ L.Control.Pdf = L.Control.extend({
         return meters / this.pixelsToMeters(1, pos);
     },
 
-    scaleToDPI: function() {
+    scaleToDPI: function(scale) {
         let sPaper = 1;
-        let sWorld = this.scale;
+        let sWorld = scale;
 
-        let size = this._computeOrientedPageSize()
-        let wmmPaper = size.w;
-        let hmmPaper = size.h;
+        let size = this._orientedPageSize()
+        let wmmPaper = size.width;
+        let hmmPaper = size.height;
         let paperToWorld = sPaper / sWorld;
         let worldToPaper = 1 / paperToWorld;
         let wmmWorld = wmmPaper * worldToPaper;
@@ -548,9 +663,9 @@ L.Control.Pdf = L.Control.extend({
     },
 
     DPIToScale: function(dpi) {
-        let size = this._computeOrientedPageSize()
-        let wmmPaper = size.w;
-        let hmmPaper = size.h;
+        let size = this._orientedPageSize()
+        let wmmPaper = size.width;
+        let hmmPaper = size.height;
         let wpxWorld = dpi / 25.4 * wmmPaper;
         let hpxWorld = (hmmPaper / wmmPaper) * wpxWorld;
         let sWorldx = 1 * this.pixelsToMeters(wpxWorld, this.area.getCenter()) * 1000 / wmmPaper;
@@ -587,19 +702,28 @@ L.Control.Pdf = L.Control.extend({
         }
     },
 
-    _getBoxRectangles: function (bounds, w, h, p, o) {
-        let topLeft = this.map.project(bounds.getNorthWest())
-        let bottomRight = this.map.project(bounds.getSouthEast())
+    _getBoxRectangles: function (LObject, w, h, p, areaPadding, o) {
+        if (LObject === null || typeof LObject.getBounds !== "function")
+            return []
+
+        let topLeft = this.map.project(LObject.getBounds().getNorthWest()).subtract([areaPadding,areaPadding])
+        let bottomRight = this.map.project(LObject.getBounds().getSouthEast()).add([areaPadding,areaPadding])
 
         const rects = coverAreaWithRectangles(topLeft, bottomRight, w-2*p, h-2*p)
 
         return rects
     },
 
-    _getRouteRectangles: function(ll, w, h, p, o) {
+    _getRouteRectangles: function(LObject, w, h, p, ap, o) {
+        if (LObject === null || typeof LObject.getLatLngs !== "function")
+            return []
+
+        let ll = LObject.getLatLngs()
+
         if (ll.length === 0) {
             return [];
         }
+
         if (ll[0] instanceof Array) {
             // multidimensional array (possible multipath ? )
             // we will get only first path
@@ -629,6 +753,14 @@ L.Control.Pdf = L.Control.extend({
         return rects;
     },
 
+    isScalePaging() {
+        return this.options.pagingMethod === "scale"
+    },
+
+    isPagesPaging() {
+        return this.options.pagingMethod === "pages"
+    },
+
     setArea: function (area) {
         if (area === null || typeof area !== 'object' || typeof area.getBounds !== 'function') {
             throw new Error("the area must have getBounds or LatLng method")
@@ -644,6 +776,24 @@ L.Control.Pdf = L.Control.extend({
         return this.scale
     },
 
+    /**
+     * setPageCount defines the number of pages the area will be divided into
+     * used only if pagingMethod set to 'pages'
+     * @param pages
+     */
+    setPageCount: function (pages = 1) {
+        if (pages === 0)
+            pages = 1
+        this.pageCount = pages
+    },
+
+    /**
+     *
+     * @returns {number}
+     */
+    getPageCount: function () {
+        return this.pageCount
+    },
     /**
      * setPageOrientation defines pdf page orientation
      * @param orientation

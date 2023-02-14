@@ -25,24 +25,30 @@ export function coverLineWithRectangles(l, w, h, mix) {
 
 /**
  *
- * @param tlc {L.LatLng} top left corner
- * @param brc {L.LatLng} top right corner
- * @param w - width in points
- * @param h - height in points
+ * @param tlc {L.Point} top left corner
+ * @param brc {L.Point} top right corner
+ * @param w {number} rectangle width
+ * @param h {number} rectangle height
+ */
+export function areaRectanglesCount(tlc, brc, w, h) {
+    return [Math.ceil((brc.x - tlc.x) / w), Math.ceil((brc.y - tlc.y) / h)]
+}
+/**
+ *
+ * @param tlc {L.Point} top left corner
+ * @param brc {L.Point} top right corner
+ * @param w {number}  width in points
+ * @param h {number}  height in points
  */
 export function coverAreaWithRectangles(tlc, brc, w, h) {
 
     let rects = []
-    let totalW = brc.x - tlc.x
-    let totalH = brc.y - tlc.y
 
-    let wPages = Math.ceil(totalW / w)
-    let hPages = Math.ceil(totalH / h)
-
+    let [wPages, hPages] = areaRectanglesCount(tlc, brc, w, h)
     let startX = tlc.x
     let startY = tlc.y
 
-    // cover are with rectangles
+    // cover area with rectangles
     for (let i = 0; i < hPages; i++) {
         for (let j = 0; j < wPages; j++) {
             let x = startX + j * w
@@ -58,7 +64,8 @@ function coverLineWithRectangle(l, w, h, i1) {
     let segment;
     let intersection = undefined;
     let dist = 0;
-    for (let i = i1+1; i < l.length && intersection === undefined; i++) {
+    let i = 0;
+    for (i = i1+1; i < l.length && intersection === undefined; i++) {
         let grect = rect.extend(l[i]);
         segment = new Segment(l[i-1], l[i]);
         if (grect.isSmallerThan(w, h)) { // whole segment fits in rectangle [w,h]
