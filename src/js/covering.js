@@ -134,6 +134,10 @@ class Rectangle {
         return new Rectangle(this.min.subtract(L.point(p, p)), this.max.add(L.point(p,p)));
     }
 
+    scale(scale) {
+        return new Rectangle(this.min.multiplyBy(scale), this.max.multiplyBy(scale));
+    }
+
     isSmallerThan(w, h) {
         return this.size.x <= w && this.size.y <= h;
     }
