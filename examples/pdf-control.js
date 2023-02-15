@@ -312,7 +312,7 @@ L.Control.PdfControl = L.Control.extend({
 		if (this.pdf.options.pagingMethod === "pages") {
 			this.inputScale.value = parseInt(pd.sWorld)
 		}
-		this.pagePixelSize.innerHTML = `${Math.floor(pd.wpxWorld)} x ${Math.floor(pd.hpxWorld)}`
+		this.pagePixelSize.innerHTML = `${Math.floor(pd.dimensions.wpx)} x ${Math.floor(pd.dimensions.hpx)}`
 
 		if (pd.pagesToPrint.length === pd.rects.length) {
 			this.inputPagesToPrint.value = `1-${pd.rects.length}`;
@@ -326,7 +326,6 @@ L.Control.PdfControl = L.Control.extend({
 		var hue = Math.min(Math.floor((hue2 - hue1) * (pd.dpi - dpi1) / (dpi2 - dpi1)), hue2); // restrict to hue2
 		this.inputDPI.style.color = `hsl(${hue}, 100%, 50%)`;
 
-		//var dpi = Math.floor((wpxWorld / (wmmPaper / 25.4) + hpxWorld / (hmmPaper / 25.4)) / 2);
 		this.setPrintStatus();
 	},
 
