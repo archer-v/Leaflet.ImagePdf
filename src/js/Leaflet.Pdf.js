@@ -4,13 +4,17 @@ import {
 } from "./covering.js";
 
 const DEBUG = false;
-export const PageOrientationPortrait = 0
-export const PageOrientationLandscape = 1
-export const PageOrientationAuto = 2
+const PageOrientationPortrait = 0
+const PageOrientationLandscape = 1
+const PageOrientationAuto = 2
 
 const StatusReady = 0
 const StatusAtWork = 1
 const StatusAborted = 2
+
+const AlgCoverUnknown = 0
+const AlgCoverArea = 1
+const AlgCoverPath = 2
 
 export const OpGenerateImage = "image"
 export const OpCreatePage = "page"
@@ -33,6 +37,7 @@ L.Control.Pdf = L.Control.extend({
         pdfPrintPageNumber: true,
         pdfPrintGraticule: true, // isn;t implemented
         pdfPrintScaleMeter: true, // isn;t implemented
+        pdfDownloadOnFinish: false, // starts browser's file download process in order to save pdf file
         pdfAttributionText: "Printed with Leaflet.Pdf",
         pdfDocumentProperties: {}, // properties to add to the PDF document // property_name-to-property_value object structure
         skipNodesWithCSS: ['div.leaflet-control-container', 'div.control-pane-wrapper'],
@@ -75,11 +80,9 @@ L.Control.Pdf = L.Control.extend({
             this.debugRectStyle = {stroke: true, weight: 1, opacity: 0.8, color: "green", fillColor: "green", fillOpacity: 0.2};
         }
 
-        /*
+        //pdfDownloadOnFinish
         this.downloadLink = document.createElement("a")
-        Object.assign(this.downloadLink, {"download": this.defaultPdfFileName});
         Object.assign(this.downloadLink.style, {"display": "none"});
-        */
 
         // css used on images generation stage
         this.css = document.createElement("style");
@@ -149,6 +152,7 @@ L.Control.Pdf = L.Control.extend({
             wmmPaper: wmmPaper,
             hmmPaper: hmmPaper,
             pmmPaper: this.pageMargin,
+            pmmArea: this.options.areaPadding,
             regionCenter: this.area.getCenter(), //center of area
         }
 
@@ -157,6 +161,7 @@ L.Control.Pdf = L.Control.extend({
         pd.wmmWorld = pd.wmmPaper * (pd.sWorld / pd.sPaper);
         pd.hmmWorld = pd.hmmPaper * (pd.sWorld / pd.sPaper);
         pd.pmmWorld = pd.pmmPaper * (pd.sWorld / pd.sPaper);
+        pd.pmmAreaWorld = pd.pmmArea * (pd.sWorld / pd.sPaper)
 
         // page dimension in points at current map zoom level
         pd.wpxWorld = this.metersToPixels(pd.wmmWorld / 1000, pd.regionCenter);
@@ -166,7 +171,7 @@ L.Control.Pdf = L.Control.extend({
 
         pd.dpi = Math.round(this.scaleToDPI(pd.sWorld));
         // area padding in points at current map zoom level
-        pd.appx = this.metersToPixels(this.options.areaPadding * (pd.sWorld / pd.sPaper) / 1000, pd.regionCenter);
+        pd.appx = this.metersToPixels(pd.pmmAreaWorld / 1000, pd.regionCenter);
 
         return pd
     },
@@ -180,26 +185,39 @@ L.Control.Pdf = L.Control.extend({
         let bottomRight = this.map.project(bounds.getSouthEast())
         let areaW = bottomRight.x - topLeft.x // area width in points
         let areaH = bottomRight.y - topLeft.y
-        let pd = this._pageData(this.scale, pageSize.width, pageSize.height)
+        let pd = this._pageData(this.scale, pageSize.width, pageSize.height) // only several
         // computes scale we need to use in order the area fits into one page
-        let onePagesScaleW = Math.ceil(pd.sPaper * (this.pixelsToMeters(areaW, pd.regionCenter)) * 1000 / (pd.wmmPaper - pd.pmmPaper * 2 - this.options.areaPadding * 2))
-        let onePagesScaleH = Math.ceil(pd.sPaper * (this.pixelsToMeters(areaH, pd.regionCenter)) * 1000 / (pd.hmmPaper - pd.pmmPaper * 2 - this.options.areaPadding * 2))
+        let onePagesScaleW = Math.ceil(pd.sPaper * (this.pixelsToMeters(areaW, pd.regionCenter)) * 1000 / (pd.wmmPaper - pd.pmmPaper * 2 - pd.pmmArea * 2))
+        let onePagesScaleH = Math.ceil(pd.sPaper * (this.pixelsToMeters(areaH, pd.regionCenter)) * 1000 / (pd.hmmPaper - pd.pmmPaper * 2 - pd.pmmArea * 2))
         let onePagesScale = Math.max(onePagesScaleW, onePagesScaleH)
 
-
         if (this.options.debug) {
+            // draw bounds area
             let rect = [this.map.unproject(topLeft), this.map.unproject(bottomRight)];
             L.rectangle(rect, this.debugRectStyle).addTo(this.debugRectGroup);
         }
 
-        if (pageCount === 1)
+        let algorithm = this.rectanglesEvaluationMethod(this.area)
+        let computePageCount = function (scale) {
+            return 0
+        }
+
+        if (pageCount === 1 && (! this.area instanceof L.Polygon))
             return onePagesScale
 
-        let areaPageCount = function (scale) {
-            let pd = this._pageData(scale, pageSize.width, pageSize.height)
-            let [rows, cols] = areaRectanglesCount(topLeft.subtract([pd.appx, pd.appx]), bottomRight.add([pd.appx, pd.appx]), pd.wpxWorld - 2 * pd.ppxWorld, pd.hpxWorld - 2 * pd.ppxWorld)
-            return rows * cols
-        }.bind(this)
+        if (algorithm === AlgCoverArea) {
+            computePageCount = function (scale) {
+                let pd = this._pageData(scale, pageSize.width, pageSize.height)
+                let [rows, cols] = areaRectanglesCount(topLeft.subtract([pd.appx, pd.appx]), bottomRight.add([pd.appx, pd.appx]), pd.wpxWorld - 2 * pd.ppxWorld, pd.hpxWorld - 2 * pd.ppxWorld)
+                return rows * cols
+            }.bind(this)
+        } else if (algorithm === AlgCoverPath) {
+            computePageCount = function (scale) {
+                let pd = this._pageData(scale, pageSize.width, pageSize.height)
+                let rects = this._getRouteRectangles(this.area, pd.wpxWorld, pd.hpxWorld, pd.ppxWorld, pd.appx, this.pageOrientation)
+                return rects.length
+            }.bind(this)
+        }
 
         let iterations = 0;
         let scale = onePagesScale
@@ -208,7 +226,7 @@ L.Control.Pdf = L.Control.extend({
         while (step > 10 || step < - 10) {
             let switchDirection = false
             iterations++
-            let c = areaPageCount(scale)
+            let c = computePageCount(scale)
             if (c > pageCount) {
                 switchDirection = (step < 0)
             } else if (c < pageCount) {
@@ -224,29 +242,32 @@ L.Control.Pdf = L.Control.extend({
                 step = step / 2
             }
             scale = scale + step
-            if (iterations > 1000) {
+            if (iterations > 1000 || c === 0) {
                 console.error("something got wrong, to much iterations")
                 break
             }
         }
         if (bestScale > 0)
             scale = bestScale
-        console.log(`iterations: ${iterations}`)
+        if (this.options.debug) {
+            console.log(`computeScale iterations: ${iterations}`)
+        }
+
         return Math.ceil(scale)
     },
 
     rectanglesEvaluationMethod: function (LObject) {
         if ( LObject instanceof L.Polygon || (LObject instanceof L.Polyline && this.isPagesPaging() && this.pageCount == 1)) {
-            return this._getBoxRectangles.bind(this)
+            return AlgCoverArea
         } else if ( LObject instanceof L.Polyline) {
-            return this._getRouteRectangles.bind(this)
+            return AlgCoverPath
         }
         console.log("unknown geometry type")
-        return null
+        return AlgCoverUnknown
     },
     /**
-     *
-     * @returns {object}
+     * computes pages data according current map state and pages and pdf settings
+     * @returns {object} pages data that can be used to page generation
      */
     computePages: function () {
         if (this.area === null)
@@ -272,10 +293,13 @@ L.Control.Pdf = L.Control.extend({
         pd.rects = []
         pd.images = []
 
-        let getRectangles = this.rectanglesEvaluationMethod(this.area)
+        let algorithm = this.rectanglesEvaluationMethod(this.area)
+        let getRectangles =
+            (algorithm === AlgCoverArea) ? this._getBoxRectangles.bind(this) :
+                (algorithm === AlgCoverPath) ? this._getRouteRectangles.bind(this) :
+                function () {return []}
 
-        if (typeof getRectangles === "function")
-            pd.rects = getRectangles(this.area, pd.wpxWorld, pd.hpxWorld, pd.ppxWorld, pd.appx, this.pageOrientation)
+        pd.rects = getRectangles(this.area, pd.wpxWorld, pd.hpxWorld, pd.ppxWorld, pd.appx, this.pageOrientation)
 
         // pad rectangles with margin
         for (let i = 0; i < pd.rects.length; i++) {
@@ -303,6 +327,10 @@ L.Control.Pdf = L.Control.extend({
         return pd
     },
 
+    /**
+     * shows pages preview rectangles on the map
+     * @returns {{hmmPaper, regionCenter: *, sWorld: (*|number), sPaper: number, pmmPaper: number, wmmPaper}}
+     */
     showPages: function () {
         if (this.area === null || this.status !== StatusReady)
             return;
@@ -316,6 +344,9 @@ L.Control.Pdf = L.Control.extend({
         return printData
     },
 
+    /**
+     * hides pages preview rectangles on the map
+     */
     hidePages: function () {
         this.rectGroup.clearLayers();
     },
@@ -341,6 +372,10 @@ L.Control.Pdf = L.Control.extend({
         this.fireMapRestored()
     },
 
+    /**
+     * disables map controls and input
+     * @private
+     */
     _disableInput: function() {
         //console.log("input disabled");
         this.map.boxZoom.disable();
@@ -352,6 +387,10 @@ L.Control.Pdf = L.Control.extend({
         this.map.touchZoom.disable();
     },
 
+    /**
+     * restores map controls and input
+     * @private
+     */
     _enableInput: function() {
         //console.log("input enabled");
         this.map.boxZoom.enable();
@@ -363,6 +402,11 @@ L.Control.Pdf = L.Control.extend({
         this.map.touchZoom.enable();
     },
 
+    /**
+     * starts a background pdf generation process, the map will be locked
+     * subscribe to pdf events in order to control printing and catch the result
+     * @returns {boolean} false if there are already running printing
+     */
     print: function () {
         if (this.status !== StatusReady) {
             return false
@@ -377,6 +421,9 @@ L.Control.Pdf = L.Control.extend({
         this._createImages(pagesData);
     },
 
+    /**
+     * aborts a running pdf generation
+     */
     abort: function () {
         if (this.status !== StatusAtWork)
             return
@@ -386,6 +433,7 @@ L.Control.Pdf = L.Control.extend({
 
     /**
      * _createPdf creates pdf and fire the finish event with data set to pdf blob on success or null on fail / abort
+     * don't call it directly
      * @param {PagesData}
      * @private
      */
@@ -453,14 +501,21 @@ L.Control.Pdf = L.Control.extend({
             finish()
             return
         }
-        // to decide download filename: https://stackoverflow.com/a/56923508/3527139
         blob = pdf.output("blob", {filename: this.options.pdfFileName});
-        //this.downloadLink.href = URL.createObjectURL(blob);
-        //this.downloadLink.click(); // download
+        if (this.options.pdfDownloadOnFinish) {
+            Object.assign(this.downloadLink, {"download": this.options.pdfFileName});
+            this.downloadLink.href = URL.createObjectURL(blob);
+            this.downloadLink.click(); // download
+        }
 
         finish()
     },
 
+    /**
+     * creates images
+     * @param pd {object} describes pages to create (including their dimensions, scaling, position, etc)
+     * @private
+     */
     _createImages: function(pd) {
 
         let rects = pd.rects
@@ -485,14 +540,7 @@ L.Control.Pdf = L.Control.extend({
                 }
             if (this.options.nodeFilterCb && typeof this.options.nodeFilterCb === "function")
                 return this.options.nodeFilterCb(nodeElement)
-/*
 
-            if (nodeElement.tagName === 'DIV') {
-                if (nodeElement.classList.contains('leaflet-control-container') || nodeElement.classList.contains('control-pane-wrapper')) {
-                    return false
-                }
-            }
- */
             return true
         }.bind(this)
 
@@ -579,6 +627,12 @@ L.Control.Pdf = L.Control.extend({
         document.dispatchEvent(new CustomEvent("pdf:startNextImage", {detail: {i:0}}))
     },
 
+    /**
+     * checks if all tiles is loaded
+     * @param map
+     * @returns {boolean}
+     * @private
+     */
     _isTilesLoaded: function(map){
         for (let l in map._layers) {
             let layer = map._layers[l];
@@ -736,17 +790,14 @@ L.Control.Pdf = L.Control.extend({
         const [rects, intersections] = coverLineWithRectangles(l, w-2*p, h-2*p, o === PageOrientationAuto);
 
         // show intersection points (only for debugging purposes)
-        // TODO: print intersection points at page boundaries to easily "follow" the map
-        // TODO: remove them completely
-        if (DEBUG) {
+        if (this.options.debug) {
             // convert from pixel coordinates back to geographical coordinates
-            // TODO: better to not convert yet?
             for (let i = 0; i < intersections.length; i++) {
                 intersections[i] = this.map.unproject(intersections[i]);
             }
 
             for (const p of intersections) {
-                L.circleMarker(p, {radius: 5, stroke: false, color: "black", opacity: 1, fillOpacity: 1.0}).addTo(this.rectGroup);
+                L.circleMarker(p, {radius: 5, stroke: false, color: "black", opacity: 1, fillOpacity: 1.0}).addTo(this.debugRectGroup);
             }
         }
 
