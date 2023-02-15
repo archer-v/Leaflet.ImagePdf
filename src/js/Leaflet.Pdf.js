@@ -36,6 +36,7 @@ L.Control.Pdf = L.Control.extend({
         pdfFileName: "map.pdf",
         tilesLoadingTimeout: 10000, // msec, timeout for tile loading on every page generation
         imageFormat: "jpeg",
+        progressSplashScreenStyle: {width: "100vw", height: "100vw", background: "white", "z-index": 950, position: "relative"},
         pagePreviewStrokeColor: "gray",
         pagePreviewFillColor: "gray",
         pdfFontSize: 15, // default font size of text labels in pdf document
@@ -45,7 +46,7 @@ L.Control.Pdf = L.Control.extend({
         pdfDownloadOnFinish: false, // starts browser's file download process in order to save pdf file
         pdfAttributionText: "Created with Leaflet.Pdf",
         pdfDocumentProperties: {}, // properties to add to the PDF document // name-to-value object structure
-        skipNodesWithCSS: ['div.leaflet-control-container', 'div.control-pane-wrapper'], // exclude these nodes from created images
+        skipNodesWithCSS: ['div.leaflet-control-container', 'div.control-pane-wrapper', 'div.pdf-progress-plug'], // exclude these nodes from created images
         pdfPageCb: null, // callback function(pdf, pageNumber) that calls on every pdf page generation
                          // you can use it to add you custom text or data to pdf pages (see jspdf spec on how to operate with pdf document)
         nodeFilterCb: null, // callback function(domNode) that calls on every dom element and should return true or false
@@ -97,6 +98,11 @@ L.Control.Pdf = L.Control.extend({
         // prevent image opacity fade effect on tile load
         this.css.sheet.insertRule('.leaflet-tile-container > img {opacity: 1 !important;}', 0);
 
+        this.progressDiv = document.createElement("div")
+        Object.assign(this.progressDiv, {className: 'pdf-progress-plug'});
+        Object.assign(this.progressDiv.style, this.options.progressSplashScreenStyle,{display: "none"});
+        this.map._container.append(this.progressDiv)
+
         this.setScale(this.options.scale)
         this.setImageFormat(this.options.imageFormat);
         this.setPagePreviewStrokeColor(this.options.pagePreviewStrokeColor);
@@ -111,6 +117,7 @@ L.Control.Pdf = L.Control.extend({
     destroy: function () {
         this.hidePages()
         this.map.removeLayer(this.rectGroup);
+        this.map._container.remove(this.progressDiv)
     },
 
     pageSizes: function() {
@@ -398,6 +405,7 @@ L.Control.Pdf = L.Control.extend({
         if (this.options.debug) {
             this.debugRectGroup.clearLayers()
         }
+        this.progressDiv.style.display = "block"
         this.fireMapLocked()
     },
 
@@ -406,7 +414,7 @@ L.Control.Pdf = L.Control.extend({
         this.map.getContainer().style.height = this.savedMapState.height;
         this.map.setView(this.savedMapState.center, this.savedMapState.zoom, {animate: false})
         this.map.invalidateSize();
-
+        this.progressDiv.style.display = "none"
         //this.map.addLayer(this.rectGroup);
         this.fireMapRestored()
     },
@@ -874,7 +882,7 @@ L.Control.Pdf = L.Control.extend({
      * @param pages
      */
     setPageCount: function (pages = 1) {
-        if (pages === 0)
+        if (pages * 1 === 0)
             pages = 1
         this.pageCount = pages
     },
