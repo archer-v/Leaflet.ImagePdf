@@ -24,27 +24,32 @@ L.Control.Pdf = L.Control.extend({
         pageFormat: "A4",
         pageOrientation: PageOrientationPortrait,
         pageMargin: 10, //mm
-        areaPadding: 10, //mm add padding to the area
-        scale: 50000,
-        pagingMethod: 'pages', // define paging method (possible values 'pages' | 'scale')
-        pageCount: 1,
+        areaPadding: 10, //mm, add padding to the area
+        pagingMethod: 'pages',  // define paging method (possible values 'pages' | 'scale')
+        scale: 50000,           // default starting scale for 'scale' paging method
+        pageCount: 1,           // default pages count for 'pages' paging method
+        dpi: 300,               // define max target images dpi
+                                // the resulting image dpi depends on
+                                // available tiles images resolution and page size in mm
+                                // the better available dpi will be used
+                                // higher dpi value leads to downloading more tiles and greatly increase images generation time
         pdfFileName: "map.pdf",
-        tilesLoadingTimeout: 10000, // 10 sec
+        tilesLoadingTimeout: 10000, // msec, timeout for tile loading on every page generation
         imageFormat: "jpeg",
         pagePreviewStrokeColor: "gray",
         pagePreviewFillColor: "gray",
-        pdfFontSize: 15, // default font size of text labels
+        pdfFontSize: 15, // default font size of text labels in pdf document
         pdfPrintPageNumber: true,
         pdfPrintGraticule: true, // isn;t implemented
         pdfPrintScaleMeter: true, // isn;t implemented
         pdfDownloadOnFinish: false, // starts browser's file download process in order to save pdf file
-        pdfAttributionText: "Printed with Leaflet.Pdf",
-        pdfDocumentProperties: {}, // properties to add to the PDF document // property_name-to-property_value object structure
-        skipNodesWithCSS: ['div.leaflet-control-container', 'div.control-pane-wrapper'],
+        pdfAttributionText: "Created with Leaflet.Pdf",
+        pdfDocumentProperties: {}, // properties to add to the PDF document // name-to-value object structure
+        skipNodesWithCSS: ['div.leaflet-control-container', 'div.control-pane-wrapper'], // exclude these nodes from created images
         pdfPageCb: null, // callback function(pdf, pageNumber) that calls on every pdf page generation
                          // you can use it to add you custom text or data to pdf pages (see jspdf spec on how to operate with pdf document)
         nodeFilterCb: null, // callback function(domNode) that calls on every dom element and should return true or false
-                            // in order to include or exclude element from pdf
+                            // in order to include or exclude element from images and pdf
         debug: false,
     },
 
@@ -154,25 +159,50 @@ L.Control.Pdf = L.Control.extend({
             pmmPaper: this.pageMargin,
             pmmArea: this.options.areaPadding,
             regionCenter: this.area.getCenter(), //center of area
+            dimensionsAtCurrentZoom: {},
+            dimensions: {},
+            targetZoom: 0
         }
 
-        pd.paperToWorld = pd.sPaper / pd.sWorld;
-        pd.worldToPaper = 1 / pd.paperToWorld;
-        pd.wmmWorld = pd.wmmPaper * (pd.sWorld / pd.sPaper);
-        pd.hmmWorld = pd.hmmPaper * (pd.sWorld / pd.sPaper);
-        pd.pmmWorld = pd.pmmPaper * (pd.sWorld / pd.sPaper);
-        pd.pmmAreaWorld = pd.pmmArea * (pd.sWorld / pd.sPaper)
+        let paperToWorld = pd.sPaper / pd.sWorld;
+        let worldToPaper = 1 / paperToWorld;
+        let wmmWorld = pd.wmmPaper * worldToPaper;
+        let hmmWorld = pd.hmmPaper * worldToPaper;
+        let pmmWorld = pd.pmmPaper * worldToPaper;
+        let pmmAreaWorld = pd.pmmArea * worldToPaper;
 
         // page dimension in points at current map zoom level
-        pd.wpxWorld = this.metersToPixels(pd.wmmWorld / 1000, pd.regionCenter);
-        pd.hpxWorld = this.metersToPixels(pd.hmmWorld / 1000, pd.regionCenter);
-        // page margin
-        pd.ppxWorld = this.metersToPixels(pd.pmmWorld / 1000, pd.regionCenter);
+        let cd = {
+            wpx: this.metersToPixels(wmmWorld / 1000, pd.regionCenter),
+            hpx: this.metersToPixels(hmmWorld / 1000, pd.regionCenter),
+            // page margin
+            ppx: this.metersToPixels(pmmWorld / 1000, pd.regionCenter),
+            // area padding in points at current map zoom level
+            appx: this.metersToPixels(pmmAreaWorld / 1000, pd.regionCenter),
+            dpi: Math.round(this.scaleToDPI(pd.sWorld))
+        }
+        pd.dimensionsAtCurrentZoom = cd
+        pd.targetZoom = Math.min(
+            parseInt(this.map.getScaleZoom(this.options.dpi / cd.dpi, this.map.getZoom())),
+            this.map.getMaxZoom()
+        )
 
-        pd.dpi = Math.round(this.scaleToDPI(pd.sWorld));
-        // area padding in points at current map zoom level
-        pd.appx = this.metersToPixels(pd.pmmAreaWorld / 1000, pd.regionCenter);
+        pd.scaleToTarget = this.map.getZoomScale(this.map.getZoom(), pd.targetZoom)
+        pd.dpi = pd.dimensionsAtCurrentZoom.dpi / pd.scaleToTarget
 
+        pd.dimensions = {
+            wpx: Math.floor(cd.wpx / pd.scaleToTarget),
+            hpx: Math.floor(cd.hpx / pd.scaleToTarget),
+            // page margin
+            ppx: Math.floor(cd.ppx / pd.scaleToTarget),
+            // area padding in points at current map zoom level
+            appx: Math.floor(cd.appx / pd.scaleToTarget),
+            dpi: pd.dpi
+        }
+
+        console.log(`zoom: ${this.map.getZoom()}`)
+//        console.log(`zoom scale: ${this.map.getZoomScale()}`)
+//        console.log(`scale: ${this.map.scale(this.map.getZoom())}`)
         return pd
     },
 
@@ -207,14 +237,14 @@ L.Control.Pdf = L.Control.extend({
 
         if (algorithm === AlgCoverArea) {
             computePageCount = function (scale) {
-                let pd = this._pageData(scale, pageSize.width, pageSize.height)
-                let [rows, cols] = areaRectanglesCount(topLeft.subtract([pd.appx, pd.appx]), bottomRight.add([pd.appx, pd.appx]), pd.wpxWorld - 2 * pd.ppxWorld, pd.hpxWorld - 2 * pd.ppxWorld)
+                let pd = this._pageData(scale, pageSize.width, pageSize.height).dimensionsAtCurrentZoom
+                let [rows, cols] = areaRectanglesCount(topLeft.subtract([pd.appx, pd.appx]), bottomRight.add([pd.appx, pd.appx]), pd.wpx - 2 * pd.ppx, pd.hpx - 2 * pd.ppx)
                 return rows * cols
             }.bind(this)
         } else if (algorithm === AlgCoverPath) {
             computePageCount = function (scale) {
-                let pd = this._pageData(scale, pageSize.width, pageSize.height)
-                let rects = this._getRouteRectangles(this.area, pd.wpxWorld, pd.hpxWorld, pd.ppxWorld, pd.appx, this.pageOrientation)
+                let pd = this._pageData(scale, pageSize.width, pageSize.height).dimensionsAtCurrentZoom
+                let rects = this._getRouteRectangles(this.area, pd.wpx, pd.hpx, pd.ppx, pd.appx, this.pageOrientation)
                 return rects.length
             }.bind(this)
         }
@@ -290,6 +320,7 @@ L.Control.Pdf = L.Control.extend({
         let pageSize = this._orientedPageSize()
         let pd = this._pageData(scale, pageSize.width, pageSize.height)
 
+        pd.rectsAtCurrentZoom = []
         pd.rects = []
         pd.images = []
 
@@ -299,13 +330,17 @@ L.Control.Pdf = L.Control.extend({
                 (algorithm === AlgCoverPath) ? this._getRouteRectangles.bind(this) :
                 function () {return []}
 
-        pd.rects = getRectangles(this.area, pd.wpxWorld, pd.hpxWorld, pd.ppxWorld, pd.appx, this.pageOrientation)
+        let dims = pd.dimensionsAtCurrentZoom
+        pd.rectsAtCurrentZoom = getRectangles(this.area, dims.wpx, dims.hpx, dims.ppx, dims.appx, this.pageOrientation)
 
-        // pad rectangles with margin
-        for (let i = 0; i < pd.rects.length; i++) {
-            let rotated = pd.rects[i].rotated; // property is destroyed after padding
-            pd.rects[i] = pd.rects[i].pad(pd.ppxWorld);
-            pd.rects[i].rotated = rotated;
+        // pad rectangles with margin and scale to printing zoom
+        for (let i = 0; i < pd.rectsAtCurrentZoom.length; i++) {
+            let rotated = pd.rectsAtCurrentZoom[i].rotated; // property is destroyed after padding
+            pd.rectsAtCurrentZoom[i] = pd.rectsAtCurrentZoom[i].pad(dims.ppx);
+            let scaledRect = pd.rectsAtCurrentZoom[i].scale(1/pd.scaleToTarget);
+            pd.rectsAtCurrentZoom[i].rotated = rotated; // todo check, may be obsolete
+            scaledRect.rotated = rotated;
+            pd.rects.push(scaledRect);
         }
 
         pd.pageCount = pd.rects.length
@@ -333,11 +368,11 @@ L.Control.Pdf = L.Control.extend({
      */
     showPages: function () {
         if (this.area === null || this.status !== StatusReady)
-            return;
+            return null
 
         let printData = this.computePages()
         if (printData) {
-            this._showPageRectangles(printData.rects, printData.ppxWorld)
+            this._showPageRectangles(printData.rectsAtCurrentZoom, printData.dimensionsAtCurrentZoom.ppx)
         } else {
             this.hidePages()
         }
@@ -358,7 +393,11 @@ L.Control.Pdf = L.Control.extend({
             center: this.map.getCenter(),
             zoom: this.map.getZoom()
         }
+        // todo add rectGroup css selector to node filter, and we can avoid removing the layer
         this.map.removeLayer(this.rectGroup);
+        if (this.options.debug) {
+            this.debugRectGroup.clearLayers()
+        }
         this.fireMapLocked()
     },
 
@@ -556,7 +595,7 @@ L.Control.Pdf = L.Control.extend({
 
         let generateImage = function (ev) {
             let i = ev.detail.i
-            let r = pd.rects[pageIndexes[i]]
+            let r = rects[pageIndexes[i]]
             imageGenerator(this.map.getContainer(), {width: r.width, height: r.height, filter: filter})
                 .then(function (dataUrl) {
                     if (this.status === StatusAborted) {
@@ -590,12 +629,14 @@ L.Control.Pdf = L.Control.extend({
                 this.fireProgress(OpGenerateImage, i, pageIndexes.length, r)
                 let w = r.width;
                 let h = r.height;
-                let c = this.map.unproject(r.middle);
+                let c = this.map.unproject(
+                    this.map.getZoom() == pd.targetZoom ? pd.rects[p].middle :pd.rectsAtCurrentZoom[p].middle
+                );
 
                 this.map.getContainer().style.width = `${w}px`;
                 this.map.getContainer().style.height = `${h}px`;
                 this.map.invalidateSize();
-                this.map.setView(c, this.map.getZoom(), {animate: false});
+                this.map.setView(c, pd.targetZoom, {animate: false});
 
                 //need to wait the all tiles is loaded
                 let printInterval = setInterval(function () {
