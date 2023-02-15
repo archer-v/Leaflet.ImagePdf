@@ -123,6 +123,7 @@ L.Control.PdfControl = L.Control.extend({
 				id: "input-pages-to-create",
 				type: "number",
 				defaultValue: this.pdf.getPageCount(),
+				min: "1",
 				disabled: this.pdf.options.pagingMethod !== 'pages'},
 			{width: "3em"});
 		l = this._createElement("label", {innerHTML: "Pages:", for: this.inputPages.id});
