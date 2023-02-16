@@ -240,7 +240,11 @@ L.Control.PdfControl = L.Control.extend({
 		this.inputOrientation.addEventListener("change", this.previewRoute.bind(this));
 		this.inputMargin.addEventListener("change", this.previewRoute.bind(this));
 		this.inputPrint.onclick = this.printRoute.bind(this);
-		this.map.addEventListener("zoomend", this.previewRoute.bind(this));
+		if (this.pdf.isScalePaging()) {
+			// need to recalculate dpi & pages sizes
+			// todo need to remove listener
+			this.map.on("zoomend", this.previewRoute, this);
+		}
 
 		this.map.on("pdf:progress", this.onProgress, this)
 
@@ -260,6 +264,7 @@ L.Control.PdfControl = L.Control.extend({
 
 		// remove events
 		this.map.off("pdf:progress", this.onProgress)
+		this.map.off("zoomend", this.previewRoute, this);
 
 		// todo need more accurate cleanup:
 		//  	hide everything that may be visible
@@ -270,7 +275,7 @@ L.Control.PdfControl = L.Control.extend({
 		this.printStatus.innerHTML = status == undefined ? "" : " " + status;
 	},
 
-	previewRoute: function() {
+	previewRoute: function(ev) {
 		if (!this.hasRoute) {
 			return;
 		}
