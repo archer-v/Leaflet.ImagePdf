@@ -33,6 +33,9 @@ L.Control.Pdf = L.Control.extend({
                                 // available tiles images resolution and page size in mm
                                 // the better available dpi will be used
                                 // higher dpi value leads to downloading more tiles and greatly increase images generation time
+        maxZoom: null,          // define map maximum zoom level we can fall down while load image tiles
+                                // if null it will be evaluated from map.getMaxZoom()
+                                // can be number, or function, that should return the number
         pdfFileName: "map.pdf",
         tilesLoadingTimeout: 10000, // msec, timeout for tile loading on every page generation
         imageFormat: "jpeg",
@@ -40,12 +43,19 @@ L.Control.Pdf = L.Control.extend({
         pagePreviewStrokeColor: "gray",
         pagePreviewFillColor: "gray",
         pdfFontSize: 15, // default font size of text labels in pdf document
-        pdfPrintPageNumber: true,
-        pdfPrintGraticule: true, // isn;t implemented
-        pdfPrintScaleMeter: true, // isn;t implemented
+        pdfPrintGraticule: true, // isn;t implemented yet
+        pdfPrintScaleMeter: true, // isn;t implemented yet
         pdfDownloadOnFinish: false, // starts browser's file download process in order to save pdf file
-        pdfAttributionText: "Created with Leaflet.Pdf",
-        pdfDocumentProperties: {}, // properties to add to the PDF document // name-to-value object structure
+        pdfSheetPageNumber: {       // add page number to a sheet at defined position
+            position: "bottomright",
+        },
+        pdfSheetAttribution: {      // add attribution text to a sheet at defined position
+            position: "topleft",
+            text: "Created with Leaflet.Pdf"
+        },
+        pdfDocumentProperties: {    // properties to add to the PDF document // name-to-value object structure
+            'creator': "Leaflet.Pdf"
+        },
         skipNodesWithCSS: ['div.leaflet-control-container', 'div.control-pane-wrapper', 'div.pdf-progress-plug'], // exclude these nodes from created images
         pdfPageCb: null, // callback function(pdf, pageNumber) that calls on every pdf page generation
                          // you can use it to add you custom text or data to pdf pages (see jspdf spec on how to operate with pdf document)
@@ -189,9 +199,19 @@ L.Control.Pdf = L.Control.extend({
             dpi: Math.round(this.scaleToDPI(pd.sWorld))
         }
         pd.dimensionsAtCurrentZoom = cd
+        // with multiply tile layers map.getMaxZoom() returns maximum zoom from all layers
+        // but if the layer with maximum zoom level is filtered from output we will get incorrect target zoom
+        // need to evaluate maxMapZoom manually
+        // let maxMapZoom = this.map.getMaxZoom()
+        let maxZoom
+        if (this.maxZoom) {
+            maxZoom = (typeof this.maxZoom === "function") ? this.maxZoom() : this.maxZoom
+        } else {
+            maxZoom = this.map.getMaxZoom()
+        }
         pd.targetZoom = Math.min(
             parseInt(this.map.getScaleZoom(this.options.dpi / cd.dpi, this.map.getZoom())),
-            this.map.getMaxZoom()
+            maxZoom
         )
 
         pd.scaleToTarget = this.map.getZoomScale(this.map.getZoom(), pd.targetZoom)
@@ -206,10 +226,6 @@ L.Control.Pdf = L.Control.extend({
             appx: Math.floor(cd.appx / pd.scaleToTarget),
             dpi: pd.dpi
         }
-
-        console.log(`zoom: ${this.map.getZoom()}`)
-//        console.log(`zoom scale: ${this.map.getZoomScale()}`)
-//        console.log(`scale: ${this.map.scale(this.map.getZoom())}`)
         return pd
     },
 
@@ -373,11 +389,15 @@ L.Control.Pdf = L.Control.extend({
      * shows pages preview rectangles on the map
      * @returns {{hmmPaper, regionCenter: *, sWorld: (*|number), sPaper: number, pmmPaper: number, wmmPaper}}
      */
-    showPages: function () {
-        if (this.area === null || this.status !== StatusReady)
+    showPages: function (printData) {
+        if (this.area === null || this.status !== StatusReady) {
+            console.error("pdf: pdf creating is already in progress")
             return null
+        }
 
-        let printData = this.computePages()
+        if (! printData)
+            printData = this.computePages()
+
         if (printData) {
             this._showPageRectangles(printData.rectsAtCurrentZoom, printData.dimensionsAtCurrentZoom.ppx)
         } else {
@@ -498,6 +518,32 @@ L.Control.Pdf = L.Control.extend({
             return
         }
 
+        // todo add more intelligent text labels processing to except text overlapping
+        let addText = function (pdf, pageFormat, descriptor) {
+            if (!pdf || !descriptor || !descriptor.text || descriptor.text === "" || !descriptor.position)
+                return
+            let w = pageFormat[0]
+            let h = pageFormat[1]
+            let p = descriptor.position
+            let t = descriptor.text
+            let tw = 0
+            let th = 0
+            let attr = {}
+            if (p === "topleft") {
+                tw = 0+5; th = 0+5; attr = {align: "left", baseline: "top"}
+            } else if (p === "topright") {
+                tw = w-5; th = 0+5; attr = {align: "right", baseline: "top"}
+            } else if (p === "bottomleft") {
+                tw = 0+5; th = h-5; attr = {align: "left", baseline: "bottom"}
+            } else if (p === "bottomright") {
+                tw = w-5; th = h-5; attr = {align: "right", baseline: "bottom"}
+            } else {
+                console.warn("pdf: unknown text position")
+                return
+            }
+            pdf.text(t, tw, th, attr);
+        }
+
         let pdf = null;
         for (let i = 0; i < pd.pagesToPrint.length; i++) {
             let rect = pd.rects[pd.pagesToPrint[i]];
@@ -513,8 +559,9 @@ L.Control.Pdf = L.Control.extend({
             }
             let orientation = w > h ? "landscape" : "portrait";
             try {
+                let pageFormat = [w, h]
                 if (pdf == null) {
-                    pdf = new jspdf.jsPDF({format: [w, h], orientation: orientation, compress: true});
+                    pdf = new jspdf.jsPDF({format: pageFormat, orientation: orientation, compress: true});
                     pdf.setFontSize(this.options.pdfFontSize);
                     if (this.options.pdfDocumentProperties !== null && Object.keys(this.options.pdfDocumentProperties).length > 0) {
                         pdf.setDocumentProperties(this.options.pdfDocumentProperties)
@@ -523,12 +570,17 @@ L.Control.Pdf = L.Control.extend({
                     pdf.addPage([w, h], orientation);
                 }
                 pdf.addImage(pd.images[i], this.imageFormat, 0, 0, w, h, undefined, "FAST");
-                if (this.options.pdfAttributionText !== "") {
-                    pdf.text(this.options.pdfAttributionText, 0+5, 0+5, {align: "left", baseline: "top"});
+
+                addText(pdf, pageFormat, this.options.pdfSheetAttribution)
+                if (this.options.pdfSheetAttribution) {
+                    //pdf.text(textDescriptor(pageFormat, this.options.pdfSheetAttribution.text, this.options.pdfSheetAttribution.position))
+                    //pdf.text(this.options.pdfAttributionText, 0+5, 0+5, {align: "left", baseline: "top"});
                 }
-                if (this.options.pdfPrintPageNumber) {
-                    pdf.text(`Page ${pd.pagesToPrint[i]+1} of ${pd.pageCount}`, w-5, 0+5, {align: "right", baseline: "top"});
-                }
+                addText(pdf, pageFormat, Object.assign({text: `Page ${pd.pagesToPrint[i]+1} of ${pd.pageCount}`}, this.options.pdfSheetPageNumber))
+                //if (this.options.pdfSheetPageNumber) {
+                    //pdf.text(textDescriptor(pageFormat, `Page ${pd.pagesToPrint[i]+1} of ${pd.pageCount}`, this.options.pdfSheetAttribution.position))
+                    //pdf.text(`Page ${pd.pagesToPrint[i]+1} of ${pd.pageCount}`, w-5, 0+5, {align: "right", baseline: "top"});
+                //}
 
                 if (this.options.pdfPageCb && typeof this.options.pdfPageCb === "function") {
                     this.options.pdfPageCb(pdf, pd.pagesToPrint[i])
@@ -615,6 +667,7 @@ L.Control.Pdf = L.Control.extend({
                     //createImage(i+1);
                 }.bind(this))
                 .catch(function (er) {
+                    console.error("_createImages:domtoimage: got error", er)
                     this.fireAborted("internal error")
                     this.status = StatusAborted
                     finish()
@@ -663,6 +716,7 @@ L.Control.Pdf = L.Control.extend({
                     }
                 }.bind(this), 50);
             } catch (e) {
+                console.error("prepareDocumentForImaging: got error", e)
                 this.fireAborted("internal error")
                 finish()
             }
@@ -861,11 +915,24 @@ L.Control.Pdf = L.Control.extend({
         return this.options.pagingMethod === "pages"
     },
 
+    /**
+     * set the maximum zoom level of the map we can fall down for image tiles loading
+     * if null it will be evaluated from map.getMaxZoom()
+     * can be number, or function, that should return the number
+     * @param v
+     */
+    setMaxZoom: function (v) {
+        this.maxZoom = v
+    },
+
     setArea: function (area) {
-        if (area === null || typeof area !== 'object' || typeof area.getBounds !== 'function') {
-            throw new Error("the area must have getBounds or LatLng method")
+        if (typeof area === 'object' && typeof area.getBounds !== 'function') {
+            throw new Error("the area must have getBounds method")
         }
         this.area = area
+        if (!area) {
+            this.hidePages()
+        }
     },
 
     setScale: function(scale) {
@@ -920,6 +987,10 @@ L.Control.Pdf = L.Control.extend({
      */
     setPageMargin: function (mm) {
         this.pageMargin = parseInt(mm)
+    },
+
+    getPageMargin: function () {
+        return this.pageMargin
     },
 
     /**
