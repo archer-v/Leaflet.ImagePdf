@@ -361,7 +361,7 @@ L.Control.PdfControl = L.Control.extend({
 			}.bind(this);
 
 		}.bind(this))
-		this.pdf.print()
+		this.pdf.createPdf()
 	},
 
 	setRoute: function(line) {
