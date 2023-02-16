@@ -25,7 +25,8 @@ L.Control.Pdf = L.Control.extend({
         pageOrientation: PageOrientationPortrait,
         pageMargin: 10, //mm
         areaPadding: 10, //mm, add padding to the area
-        pagingMethod: 'pages',  // define paging method (possible values 'pages' | 'scale')
+        pagingMethod: 'pages',  // define paging method (possible values 'pages' | 'scale'), it's better to use 'pages'
+                                // 'scale' method now is buggy
         scale: 50000,           // default starting scale for 'scale' paging method
         pageCount: 1,           // default pages count for 'pages' paging method
         dpi: 300,               // define max target images dpi
@@ -33,12 +34,12 @@ L.Control.Pdf = L.Control.extend({
                                 // available tiles images resolution and page size in mm
                                 // the better available dpi will be used
                                 // higher dpi value leads to downloading more tiles and greatly increase images generation time
-        maxZoom: null,          // define map maximum zoom level we can fall down while load image tiles
+        maxZoom: null,          // define map maximum zoom level we can fall to load image tiles
                                 // if null it will be evaluated from map.getMaxZoom()
                                 // can be number, or function, that should return the number
-        pdfFileName: "map.pdf",
-        tilesLoadingTimeout: 10000, // msec, timeout for tile loading on every page generation
-        imageFormat: "jpeg",
+        outputFileName: "map.pdf",
+        tilesLoadingTimeout: 10000, // msec, timeout for tile loading on every page(image) generation
+        imageFormat: "jpeg",    // 'jpeg' or 'pdf'
         progressSplashScreenStyle: {width: "100vw", height: "100vw", background: "white", "z-index": 950, position: "relative"},
         pagePreviewStrokeColor: "gray",
         pagePreviewFillColor: "gray",
@@ -56,7 +57,7 @@ L.Control.Pdf = L.Control.extend({
         pdfDocumentProperties: {    // properties to add to the PDF document // name-to-value object structure
             'creator': "Leaflet.Pdf"
         },
-        skipNodesWithCSS: ['div.leaflet-control-container', 'div.control-pane-wrapper', 'div.pdf-progress-plug'], // exclude these nodes from created images
+        skipNodesWithCSS: ['div.leaflet-control-container', 'div.control-pane-wrapper', 'div.pdf-progress-plug'], // exclude these nodes from images
         pdfPageCb: null, // callback function(pdf, pageNumber) that calls on every pdf page generation
                          // you can use it to add you custom text or data to pdf pages (see jspdf spec on how to operate with pdf document)
         nodeFilterCb: null, // callback function(domNode) that calls on every dom element and should return true or false
@@ -320,7 +321,7 @@ L.Control.Pdf = L.Control.extend({
     },
     /**
      * computes pages data according current map state and pages and pdf settings
-     * @returns {object} pages data that can be used to page generation
+     * @returns {object} pages data that is used to page generation
      */
     computePages: function () {
         if (this.area === null)
@@ -470,11 +471,11 @@ L.Control.Pdf = L.Control.extend({
     },
 
     /**
-     * starts a background pdf generation process, the map will be locked
-     * subscribe to pdf events in order to control printing and catch the result
+     * starts a background pdf generation process, the map will be locked.
+     * subscribe to pdf events in order to control the progress and catch the results
      * @returns {boolean} false if there are already running printing
      */
-    print: function () {
+    createPdf: function () {
         if (this.status !== StatusReady) {
             return false
         }
@@ -483,9 +484,11 @@ L.Control.Pdf = L.Control.extend({
         this.status = StatusAtWork
         this.fireStarted(pagesData)
         this._lockMap()
+        this._disableInput();
+        this.css.disabled = false
         document.addEventListener("pdf:imagesCompleted", this._createPdf.bind(this, pagesData), {once: true});
 
-        this._createImages(pagesData);
+        this._createImages(pagesData.rects, pagesData.pagesToPrint, pagesData.targetZoom);
     },
 
     /**
@@ -504,11 +507,14 @@ L.Control.Pdf = L.Control.extend({
      * @param {PagesData}
      * @private
      */
-    _createPdf(pd) {
+    _createPdf(pd, data) {
 
+        let images = (data.detail) ? data.detail.images : []
         let blob = null
         let finish = function () {
+            this.css.disabled = true
             this._restoreMap();
+            this._enableInput();
             this.status = StatusReady;
             this.fireFinish(blob)
         }.bind(this)
@@ -516,6 +522,11 @@ L.Control.Pdf = L.Control.extend({
         if (this.status === StatusAborted) {
             finish()
             return
+        }
+
+        if (!images || images.length !== pd.pagesToPrintCount) {
+            console.log("pdf: images count is not equal rects count")
+            finish()
         }
 
         // todo add more intelligent text labels processing to except text overlapping
@@ -569,18 +580,9 @@ L.Control.Pdf = L.Control.extend({
                 }  else {
                     pdf.addPage([w, h], orientation);
                 }
-                pdf.addImage(pd.images[i], this.imageFormat, 0, 0, w, h, undefined, "FAST");
-
+                pdf.addImage(images[i], this.imageFormat, 0, 0, w, h, undefined, "FAST");
                 addText(pdf, pageFormat, this.options.pdfSheetAttribution)
-                if (this.options.pdfSheetAttribution) {
-                    //pdf.text(textDescriptor(pageFormat, this.options.pdfSheetAttribution.text, this.options.pdfSheetAttribution.position))
-                    //pdf.text(this.options.pdfAttributionText, 0+5, 0+5, {align: "left", baseline: "top"});
-                }
                 addText(pdf, pageFormat, Object.assign({text: `Page ${pd.pagesToPrint[i]+1} of ${pd.pageCount}`}, this.options.pdfSheetPageNumber))
-                //if (this.options.pdfSheetPageNumber) {
-                    //pdf.text(textDescriptor(pageFormat, `Page ${pd.pagesToPrint[i]+1} of ${pd.pageCount}`, this.options.pdfSheetAttribution.position))
-                    //pdf.text(`Page ${pd.pagesToPrint[i]+1} of ${pd.pageCount}`, w-5, 0+5, {align: "right", baseline: "top"});
-                //}
 
                 if (this.options.pdfPageCb && typeof this.options.pdfPageCb === "function") {
                     this.options.pdfPageCb(pdf, pd.pagesToPrint[i])
@@ -600,9 +602,9 @@ L.Control.Pdf = L.Control.extend({
             finish()
             return
         }
-        blob = pdf.output("blob", {filename: this.options.pdfFileName});
+        blob = pdf.output("blob", {filename: this.options.outputFileName});
         if (this.options.pdfDownloadOnFinish) {
-            Object.assign(this.downloadLink, {"download": this.options.pdfFileName});
+            Object.assign(this.downloadLink, {"download": this.options.outputFileName});
             this.downloadLink.href = URL.createObjectURL(blob);
             this.downloadLink.click(); // download
         }
@@ -611,22 +613,22 @@ L.Control.Pdf = L.Control.extend({
     },
 
     /**
-     * creates images
+     * creates series of images according pr object in background
+     * subscribe to document event "pdf:imagesCompleted" to catch when it is finished
      * @param pd {object} describes pages to create (including their dimensions, scaling, position, etc)
      * @private
      */
-    _createImages: function(pd) {
+    //rects, indexes, targetZoom
+    _createImages: function(rects, pageIndexes, targetZoom) {
 
-        let rects = pd.rects
-        let pageIndexes = pd.pagesToPrint
+//        let rects = pd.rects
+//        let pageIndexes = pd.pagesToPrint
+        let images = []
 
         let finish = function () {
-            this._enableInput();
-            //document.head.removeChild(this.css);
-            this.css.disabled = true
             document.removeEventListener("pdf:documentTilesLoaded", generateImage)
             document.removeEventListener("pdf:startNextImage", prepareDocumentForImaging)
-            document.dispatchEvent(new Event("pdf:imagesCompleted"));
+            document.dispatchEvent(new CustomEvent("pdf:imagesCompleted", {detail: {images: images}}));
         }.bind(this)
 
         // filter out from printing some elements (buttons, dialogs, etc)
@@ -662,7 +664,7 @@ L.Control.Pdf = L.Control.extend({
                         finish()
                         return;
                     }
-                    pd.images.push(dataUrl);
+                    images.push(dataUrl)
                     document.dispatchEvent(new CustomEvent("pdf:startNextImage", {detail: {i:i+1}}))
                     //createImage(i+1);
                 }.bind(this))
@@ -690,14 +692,20 @@ L.Control.Pdf = L.Control.extend({
                 this.fireProgress(OpGenerateImage, i, pageIndexes.length, r)
                 let w = r.width;
                 let h = r.height;
-                let c = this.map.unproject(
-                    this.map.getZoom() == pd.targetZoom ? pd.rects[p].middle :pd.rectsAtCurrentZoom[p].middle
-                );
+                let viewCenter = r.middle;
+
+                // when map is still not zoomed to target zoom (at the first image)
+                if (this.map.getZoom() !== targetZoom) {
+                    let scaleToTargetZoom = this.map.getZoomScale(this.map.getZoom(), targetZoom)
+                    let scaledRect = r.scale(scaleToTargetZoom);
+                    viewCenter = scaledRect.middle
+                }
+                viewCenter = this.map.unproject(viewCenter)
 
                 this.map.getContainer().style.width = `${w}px`;
                 this.map.getContainer().style.height = `${h}px`;
                 this.map.invalidateSize();
-                this.map.setView(c, pd.targetZoom, {animate: false});
+                this.map.setView(viewCenter, targetZoom, {animate: false});
 
                 //need to wait the all tiles is loaded
                 let printInterval = setInterval(function () {
@@ -724,9 +732,6 @@ L.Control.Pdf = L.Control.extend({
 
         document.addEventListener("pdf:documentTilesLoaded", generateImage);
         document.addEventListener("pdf:startNextImage", prepareDocumentForImaging);
-
-        this._disableInput();
-        this.css.disabled = false
         document.dispatchEvent(new CustomEvent("pdf:startNextImage", {detail: {i:0}}))
     },
 
