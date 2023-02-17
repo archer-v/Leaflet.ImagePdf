@@ -80,7 +80,7 @@ function coverLineWithRectangle(l, w, h, i1) {
     return [rect, i, intersection, dist];
 }
 
-class Rectangle {
+export class Rectangle {
     constructor(min, max) {
         this.min = min;
         this.max = max;
@@ -95,6 +95,8 @@ class Rectangle {
     get corner2() { return L.point(this.xmax, this.ymin); }
     get corner3() { return L.point(this.xmax, this.ymax); }
     get corner4() { return L.point(this.xmin, this.ymax); }
+    get topleft() { return this.corner1; }
+    get bottomright() { return this.corner3; }
 
     get middle() { return this.min.add(this.max).divideBy(2); }
 
@@ -110,6 +112,21 @@ class Rectangle {
     extend(p) {
         let min = L.point(Math.min(this.xmin, p.x), Math.min(this.ymin, p.y));
         let max = L.point(Math.max(this.xmax, p.x), Math.max(this.ymax, p.y));
+        return new Rectangle(min, max);
+    }
+
+    extendToSquare() {
+        let d = Math.abs(this.size.x - this.size.y)
+        let offset = d / 2
+        let min = L.point(this.xmin, this.ymin)
+        let max = L.point(this.xmax, this.ymax)
+        if (this.size.x > this.size.y) {
+            min.y -= offset
+            max.y += offset
+        } else {
+            min.x -= offset
+            max.x += offset
+        }
         return new Rectangle(min, max);
     }
 
