@@ -1,7 +1,8 @@
 import "jspdf";
 import {
-    coverLineWithRectangles, coverAreaWithRectangles, areaRectanglesCount
+    coverLineWithRectangles, coverAreaWithRectangles, areaRectanglesCount, Rectangle
 } from "./covering.js";
+import {resizeImage} from "./image-processing";
 
 const DEBUG = false;
 const PageOrientationPortrait = 0
@@ -38,15 +39,15 @@ L.Control.Pdf = L.Control.extend({
                                 // if null it will be evaluated from map.getMaxZoom()
                                 // can be number, or function, that should return the number
         outputFileName: "map.pdf",
+        downloadOnFinish: false, // starts browser's file download process in order to save pdf file
         tilesLoadingTimeout: 10000, // msec, timeout for tile loading on every page(image) generation
-        imageFormat: "jpeg",    // 'jpeg' or 'pdf'
+        imageFormat: "jpeg",    // 'jpeg' or 'png'
         progressSplashScreenStyle: {width: "100vw", height: "100vw", background: "white", "z-index": 950, position: "relative"},
         pagePreviewStrokeColor: "gray",
         pagePreviewFillColor: "gray",
         pdfFontSize: 15, // default font size of text labels in pdf document
         pdfPrintGraticule: true, // isn;t implemented yet
         pdfPrintScaleMeter: true, // isn;t implemented yet
-        pdfDownloadOnFinish: false, // starts browser's file download process in order to save pdf file
         pdfSheetPageNumber: {       // add page number to a sheet at defined position
             position: "bottomright",
         },
@@ -200,31 +201,19 @@ L.Control.Pdf = L.Control.extend({
             dpi: Math.round(this.scaleToDPI(pd.sWorld))
         }
         pd.dimensionsAtCurrentZoom = cd
-        // with multiply tile layers map.getMaxZoom() returns maximum zoom from all layers
-        // but if the layer with maximum zoom level is filtered from output we will get incorrect target zoom
-        // need to evaluate maxMapZoom manually
-        // let maxMapZoom = this.map.getMaxZoom()
-        let maxZoom
-        if (this.maxZoom) {
-            maxZoom = (typeof this.maxZoom === "function") ? this.maxZoom() : this.maxZoom
-        } else {
-            maxZoom = this.map.getMaxZoom()
-        }
-        pd.targetZoom = Math.min(
-            parseInt(this.map.getScaleZoom(this.options.dpi / cd.dpi, this.map.getZoom())),
-            maxZoom
-        )
 
-        pd.scaleToTarget = this.map.getZoomScale(this.map.getZoom(), pd.targetZoom)
-        pd.dpi = pd.dimensionsAtCurrentZoom.dpi / pd.scaleToTarget
+        pd.targetScale = this.options.dpi / cd.dpi
+
+        Object.assign(pd, this._calcTargetZoomAndScale(pd.targetScale, parseInt))
+        pd.dpi = pd.dimensionsAtCurrentZoom.dpi / pd.scaleToTargetZoom
 
         pd.dimensions = {
-            wpx: Math.floor(cd.wpx / pd.scaleToTarget),
-            hpx: Math.floor(cd.hpx / pd.scaleToTarget),
+            wpx: Math.floor(cd.wpx / pd.scaleToTargetZoom),
+            hpx: Math.floor(cd.hpx / pd.scaleToTargetZoom),
             // page margin
-            ppx: Math.floor(cd.ppx / pd.scaleToTarget),
+            ppx: Math.floor(cd.ppx / pd.scaleToTargetZoom),
             // area padding in points at current map zoom level
-            appx: Math.floor(cd.appx / pd.scaleToTarget),
+            appx: Math.floor(cd.appx / pd.scaleToTargetZoom),
             dpi: pd.dpi
         }
         return pd
@@ -273,6 +262,9 @@ L.Control.Pdf = L.Control.extend({
             }.bind(this)
         }
 
+        // sorts through the pages placements variants at different scale to get the better
+        // initially it was developed for paging along the route
+        // for rectangles it can be replaced with simple algorithm
         let iterations = 0;
         let scale = onePagesScale
         let step = -scale / 2
@@ -361,7 +353,7 @@ L.Control.Pdf = L.Control.extend({
         for (let i = 0; i < pd.rectsAtCurrentZoom.length; i++) {
             let rotated = pd.rectsAtCurrentZoom[i].rotated; // property is destroyed after padding
             pd.rectsAtCurrentZoom[i] = pd.rectsAtCurrentZoom[i].pad(dims.ppx);
-            let scaledRect = pd.rectsAtCurrentZoom[i].scale(1/pd.scaleToTarget);
+            let scaledRect = pd.rectsAtCurrentZoom[i].scale(1/pd.scaleToTargetZoom);
             pd.rectsAtCurrentZoom[i].rotated = rotated; // todo check, may be obsolete
             scaledRect.rotated = rotated;
             pd.rects.push(scaledRect);
@@ -384,6 +376,102 @@ L.Control.Pdf = L.Control.extend({
 
         pd.pagesToPrintCount = pd.pagesToPrint.length
         return pd
+    },
+
+    /**
+     * calc rectangles for image generation
+     * now supports only one rectangle
+     * @param targetSizePx
+     * @param paddingPx
+     * @param extendToSquare
+     * @returns {{dimensionsAtCurrentZoom: {hpx: number, aapx: number, wpx: number}, targetScale: number, targetZoom: number, rects: *[], rectsAtCurrentZoom: []}}
+     */
+    computeImages: function (targetSizePx, paddingPx, extendToSquare) {
+        if (this.area === null)
+            return null;
+
+        if (this.area._map === null) {
+            // if object is not added to the map (or removed)
+            return null;
+        }
+
+        let bounds = this.area.getBounds()
+
+        //todo create Rectangle object and perform some calculations using his methods
+        let areaRect = new Rectangle(this.map.project(bounds.getNorthWest()), this.map.project(bounds.getSouthEast()))
+
+        let targetScale = targetSizePx / Math.max(areaRect.width, areaRect.height)
+        let scaledPadding = paddingPx / targetScale
+
+        areaRect = areaRect.pad(scaledPadding)
+
+        if (extendToSquare)
+            areaRect = areaRect.extendToSquare()
+
+        let rects = coverAreaWithRectangles(areaRect.topleft, areaRect.bottomright, areaRect.width, areaRect.height)
+
+        if (rects.length !== 1) {
+            // only one rect is now supported
+            console.error("pdf:image:something got wrong with rectangle evaluation")
+        }
+
+        let cd = {
+            wpx: areaRect.width,
+            hpx: areaRect.height,
+            aapx: paddingPx / targetScale // not impl
+        }
+
+        targetScale = targetSizePx / Math.max(cd.wpx, cd.hpx)
+        let imagesData = {
+            dimensionsAtCurrentZoom: cd,
+            targetScale: targetScale,
+            targetZoom: 0,
+            rectsAtCurrentZoom: rects,
+            rects: [],
+        }
+
+        Object.assign(imagesData, this._calcTargetZoomAndScale(targetScale))
+
+        // rescale rects to target zoom
+        for (let i = 0; i < imagesData.rectsAtCurrentZoom.length; i++) {
+            imagesData.rects[i] = imagesData.rectsAtCurrentZoom[i].scale(1/imagesData.scaleToTargetZoom)
+        }
+
+        imagesData.dimensions = {
+            wpx: Math.floor(cd.wpx / imagesData.scaleToTargetZoom),
+            hpx: Math.floor(cd.hpx / imagesData.scaleToTargetZoom),
+            // page margin
+            //ppx: Math.floor(cd.ppx / imagesData.scaleToTargetZoom),
+            // area padding in points at current map zoom level
+            appx: Math.floor(cd.appx / imagesData.scaleToTargetZoom),
+        }
+
+        // todo most of this calc also are used in pdf rectangles calculations
+        //      improvement: create 'RectField' class, where to move most of rectangles calculations
+        return imagesData
+    },
+
+    /**
+     * // calculates target map zoom level in order to scale image from current zoom level at targetScale
+     * @param targetScale
+     * @param round
+     * @private
+     */
+    _calcTargetZoomAndScale: function (targetScale, round = Math.ceil) {
+        // with multiply tile layers map.getMaxZoom() returns maximum zoom from all layers
+        // but if the layer with maximum zoom level is filtered from output we will get
+        // an incorrect image at this target zoom, so we need to define maxMapZoom manually
+        let maxZoom = (this.maxZoom) ?
+            ((typeof this.maxZoom === "function") ? this.maxZoom() : this.maxZoom) :
+            this.map.getMaxZoom()
+
+        let targetZoom = Math.min(
+            maxZoom,
+            round(this.map.getScaleZoom(targetScale, this.map.getZoom()))
+        )
+        let scaleToTargetZoom = this.map.getZoomScale(this.map.getZoom(), targetZoom)
+
+        return {targetZoom: targetZoom, scaleToTargetZoom: scaleToTargetZoom}
     },
 
     /**
@@ -427,7 +515,8 @@ L.Control.Pdf = L.Control.extend({
             this.debugRectGroup.clearLayers()
         }
         this.progressDiv.style.display = "block"
-        this.fireMapLocked()
+        this._disableInput();
+        this.css.disabled = false
     },
 
     _restoreMap: function () {
@@ -437,7 +526,9 @@ L.Control.Pdf = L.Control.extend({
         this.map.invalidateSize();
         this.progressDiv.style.display = "none"
         //this.map.addLayer(this.rectGroup);
-        this.fireMapRestored()
+        this._enableInput();
+        this.css.disabled = true
+        this.status = StatusReady;
     },
 
     /**
@@ -484,15 +575,64 @@ L.Control.Pdf = L.Control.extend({
         this.status = StatusAtWork
         this.fireStarted(pagesData)
         this._lockMap()
-        this._disableInput();
-        this.css.disabled = false
         document.addEventListener("pdf:imagesCompleted", this._createPdf.bind(this, pagesData), {once: true});
 
-        this._createImages(pagesData.rects, pagesData.pagesToPrint, pagesData.targetZoom);
+        this._createImages(pagesData.rects, pagesData.pagesToPrint, pagesData.targetZoom, this.imageFormat);
     },
 
+    createImage: function (sizePx, paddingPx, extendToSquare, noBlur = false) {
+        if (this.status !== StatusReady) {
+            return false
+        }
+
+        let finish = function (blob) {
+            this._restoreMap();
+            this.fireFinish(blob)
+        }.bind(this)
+
+        let imagesData = this.computeImages(sizePx, paddingPx, extendToSquare)
+
+        let rect = imagesData.rects[0]
+        let resultWidth = sizePx
+        let resultHeight = sizePx
+        if (! extendToSquare) {
+            if (rect.width >= rect.height) {
+                resultHeight = Math.round(rect.height / (rect.width / sizePx))
+            } else {
+                resultWidth = Math.round(rect.width / (rect.height / sizePx))
+            }
+        }
+
+        this.status = StatusAtWork
+        this.fireStarted(imagesData)
+        this._lockMap()
+
+        document.addEventListener("pdf:imagesCompleted", function (data) {
+            if (! data.detail || ! data.detail.images || data.detail.images.length === 0) {
+                finish()
+                return
+            }
+            if (noBlur) {
+                this._startDownload(data.detail.images[0], this.options.imageFormat === 'jpeg' ? 'jpg' : this.options.imageFormat)
+                finish(data.detail.images[0])
+            } else {
+                // todo there are some possible improvement to reduce vector layers blur on rendered image resizing.
+                //      we can render vector layers separately at target scale and than mix them with raster layers
+                resizeImage(data.detail.images[0], resultWidth, resultHeight).then(function (imageUrl) {
+                        this._startDownload(imageUrl, this.options.imageFormat === 'jpeg' ? 'jpg' : this.options.imageFormat)
+                        finish(imageUrl)
+                    }.bind(this)
+                ).catch(function (er) {
+                    finish()
+                })
+            }
+        }.bind(this), {once: true});
+
+        this._createImages([rect], null, imagesData.targetZoom, noBlur ? this.options.imageFormat :'blob');
+
+    },
     /**
-     * aborts a running pdf generation
+     * aborts a running pdf or image generation
      */
     abort: function () {
         if (this.status !== StatusAtWork)
@@ -512,10 +652,7 @@ L.Control.Pdf = L.Control.extend({
         let images = (data.detail) ? data.detail.images : []
         let blob = null
         let finish = function () {
-            this.css.disabled = true
             this._restoreMap();
-            this._enableInput();
-            this.status = StatusReady;
             this.fireFinish(blob)
         }.bind(this)
 
@@ -602,29 +739,31 @@ L.Control.Pdf = L.Control.extend({
             finish()
             return
         }
-        blob = pdf.output("blob", {filename: this.options.outputFileName});
-        if (this.options.pdfDownloadOnFinish) {
-            Object.assign(this.downloadLink, {"download": this.options.outputFileName});
-            this.downloadLink.href = URL.createObjectURL(blob);
-            this.downloadLink.click(); // download
-        }
 
+        blob = pdf.output("blob", {filename: this._fixFileExt(this.options.outputFileName, 'pdf')});
+        this._startDownload(blob, 'pdf')
         finish()
     },
 
     /**
-     * creates series of images according pr object in background
+     * creates series of images in background
      * subscribe to document event "pdf:imagesCompleted" to catch when it is finished
-     * @param pd {object} describes pages to create (including their dimensions, scaling, position, etc)
      * @private
+     * @param rects {[Rectangle]} describes areas to imaging
+     * @param indexes {[numbers]} list of indexes in rects array
+     * @param targetZoom {number} defines map zoom level the Rectangle coordinates belong to
+     * @param imageFormat {string}
      */
-    //rects, indexes, targetZoom
-    _createImages: function(rects, pageIndexes, targetZoom) {
+    _createImages: function(rects, indexes, targetZoom, imageFormat) {
 
-//        let rects = pd.rects
-//        let pageIndexes = pd.pagesToPrint
         let images = []
 
+        if (!indexes) {
+            indexes = []
+            for (let i = 0; i < rects.length; i++) {
+                indexes.push(i)
+            }
+        }
         let finish = function () {
             document.removeEventListener("pdf:documentTilesLoaded", generateImage)
             document.removeEventListener("pdf:startNextImage", prepareDocumentForImaging)
@@ -646,19 +785,35 @@ L.Control.Pdf = L.Control.extend({
         }.bind(this)
 
         let imageGenerator = function () {
-            throw ("image generator isn't implemented")
+            return new Promise( (resolve, reject) => {
+                reject("image generator isn't implemented")
+            })
         }
 
-        if (this.imageFormat === "jpeg") {
+        if (imageFormat === "jpeg") {
             imageGenerator = domtoimage.toJpeg
-        } else if (this.imageFormat === "png") {
+        } else if (imageFormat === "png") {
             imageGenerator = domtoimage.toPng
+        } else if (imageFormat === "blob") {
+            imageGenerator = domtoimage.toBlob
         }
 
         let generateImage = function (ev) {
             let i = ev.detail.i
-            let r = rects[pageIndexes[i]]
-            imageGenerator(this.map.getContainer(), {width: r.width, height: r.height, filter: filter})
+            let r = rects[indexes[i]]
+            //width: Math.round(r.width), height: Math.round(r.height)
+            let scale = 2
+            let options = {
+                width: Math.round(r.width) * scale,
+                height: Math.round(r.height) * scale,
+                style: {
+                    transform: 'scale(' + scale + ')',
+                    transformOrigin: 'top left'
+                },
+                filter: filter
+            }
+
+            imageGenerator(this.map.getContainer(), options)
                 .then(function (dataUrl) {
                     if (this.status === StatusAborted) {
                         finish()
@@ -673,23 +828,22 @@ L.Control.Pdf = L.Control.extend({
                     this.fireAborted("internal error")
                     this.status = StatusAborted
                     finish()
-                });
+                }.bind(this));
         }.bind(this)
 
         let prepareDocumentForImaging = function(ev) {
             try {
                 let i = ev.detail.i
+                let p = indexes[i];
 
-                let p = pageIndexes[i];
-
-                if (i === pageIndexes.length || this.status === StatusAborted) {
+                if (i === indexes.length || this.status === StatusAborted) {
                     finish()
                     return;
                 }
 
                 let timestamp = new Date().getTime()
                 let r = rects[p];
-                this.fireProgress(OpGenerateImage, i, pageIndexes.length, r)
+                this.fireProgress(OpGenerateImage, i, indexes.length, r)
                 let w = r.width;
                 let h = r.height;
                 let viewCenter = r.middle;
@@ -702,24 +856,29 @@ L.Control.Pdf = L.Control.extend({
                 }
                 viewCenter = this.map.unproject(viewCenter)
 
-                this.map.getContainer().style.width = `${w}px`;
-                this.map.getContainer().style.height = `${h}px`;
+                this.map.getContainer().style.width = `${Math.ceil(w)}px`;
+                this.map.getContainer().style.height = `${Math.ceil(h)}px`;
+//                this.map.getContainer().style.width = `${w}px`;
+//                this.map.getContainer().style.height = `${h}px`;
                 this.map.invalidateSize();
                 this.map.setView(viewCenter, targetZoom, {animate: false});
 
+                // todo here we can fix some styles in order to vector layers, markers and tooltips
+                //      looks better (not so small at high DPI resolution)
+
                 //need to wait the all tiles is loaded
-                let printInterval = setInterval(function () {
+                let timer = setInterval(function () {
                     if (new Date().getTime() - timestamp > this.options.tilesLoadingTimeout) {
                         this.status = StatusAborted
                         this.fireAborted("timeout")
                     }
                     if (this.status === StatusAborted) {
-                        clearInterval(printInterval);
+                        clearInterval(timer);
                         finish()
                         return;
                     }
                     if (this._isTilesLoaded(this.map)) {
-                        clearInterval(printInterval);
+                        clearInterval(timer);
                         document.dispatchEvent(new CustomEvent("pdf:documentTilesLoaded", {detail: {i:i}}))
                     }
                 }.bind(this), 50);
@@ -765,14 +924,6 @@ L.Control.Pdf = L.Control.extend({
 
     fireProgress: function (operation, itemNo, totalItems, item) {
         this.fireEvent("progress", {operation: operation, itemNo: itemNo, totalItems: totalItems, item: item})
-    },
-
-    fireMapLocked: function () {
-        this.fireEvent("mapLocked")
-    },
-
-    fireMapRestored: function () {
-        this.fireEvent("mapRestored")
     },
 
     fireAborted: function (reason) {
@@ -910,6 +1061,44 @@ L.Control.Pdf = L.Control.extend({
         }
 
         return rects;
+    },
+
+    _fixFileExt(filename, ext) {
+        let exts = ['jpg', 'png', 'pdf']
+        let i
+        let e
+        for (e of exts) {
+            let suffix = '.' + e
+            i = filename.lastIndexOf(suffix)
+            if (i !== -1) {
+                if (i === filename.length - suffix.length) {
+                    break
+                } else {
+                    i = -1
+                }
+            }
+        }
+        //fix extension
+        if (i !== -1) {
+            if (e === ext) {
+                return filename
+            } else {
+                return filename.substring(0, i) + '.' + ext
+            }
+        }
+        return filename + '.' + ext
+    },
+
+    _startDownload(data, ext) {
+        if (! this.options.downloadOnFinish || ! data)
+            return
+
+        // fix extensions if needed
+        let fileName = this._fixFileExt(this.options.outputFileName, ext)
+
+        Object.assign(this.downloadLink, {"download": fileName});
+        this.downloadLink.href = (data instanceof Blob) ? URL.createObjectURL(data) : data
+        this.downloadLink.click(); // download
     },
 
     isScalePaging() {
