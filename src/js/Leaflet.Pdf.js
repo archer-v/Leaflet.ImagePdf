@@ -1,8 +1,10 @@
 import "jspdf";
+//import * as htmlToImage from 'html-to-image';
 import {
     coverLineWithRectangles, coverAreaWithRectangles, areaRectanglesCount, Rectangle
 } from "./covering.js";
 import {resizeImage} from "./image-processing";
+import {changeDpiBlob, changeDpiDataUrl} from 'changedpi';
 
 const DEBUG = false;
 const PageOrientationPortrait = 0
@@ -20,31 +22,41 @@ const AlgCoverPath = 2
 export const OpGenerateImage = "image"
 export const OpCreatePage = "page"
 
+let progressSplashScreenDefaultStyle = {width: "100vw", height: "100vw", background: "white", "z-index": 950, position: "fixed", top: "0px", left: "0px", "justify-content": "center", "align-items": "center"}
+
 L.Control.Pdf = L.Control.extend({
     options: {
         pageFormat: "A4",
         pageOrientation: PageOrientationPortrait,
         pageMargin: 10, //mm
         areaPadding: 10, //mm, add padding to the area
-        pagingMethod: 'pages',  // define paging method (possible values 'pages' | 'scale'), it's better to use 'pages'
+        pagingMethod: 'pages',  // define paging method for multi-page pdf generation
+                                // (possible values 'pages' | 'scale'), it's better to use 'pages'
                                 // 'scale' method now is buggy
         scale: 50000,           // default starting scale for 'scale' paging method
         pageCount: 1,           // default pages count for 'pages' paging method
-        dpi: 300,               // define max target images dpi
-                                // the resulting image dpi depends on
-                                // available tiles images resolution and page size in mm
+        dpi: 300,               // define max target images dpi, it defines how deep the map will be zoomed to create images
+                                // the resulting image dpi depends on available tiles images resolution and page size in mm
                                 // the better available dpi will be used
                                 // higher dpi value leads to downloading more tiles and greatly increase images generation time
         maxZoom: null,          // define map maximum zoom level we can fall to load image tiles
                                 // if null it will be evaluated from map.getMaxZoom()
                                 // can be number, or function, that should return the number
-        outputFileName: "map.pdf",
+        outputFileName: "map.pdf", // can be with or without file extension
         downloadOnFinish: false, // starts browser's file download process in order to save pdf file
         tilesLoadingTimeout: 10000, // msec, timeout for tile loading on every page(image) generation
         imageFormat: "jpeg",    // 'jpeg' or 'png'
-        progressSplashScreenStyle: {width: "100vw", height: "100vw", background: "white", "z-index": 950, position: "relative"},
-        pagePreviewStrokeColor: "gray",
-        pagePreviewFillColor: "gray",
+        imagePixelRatio: 1,     // for generate images for retina screens. set to 2 or window.devicePixelRatio
+        showProgressSplashScreen: true,
+        progressSplashScreenStyle: progressSplashScreenDefaultStyle,
+        rectanglePreviewStyle: {
+            stroke: true,
+            weight: 1,
+            opacity: 1,
+            color: "gray",
+            fillColor: "gray",
+            fillOpacity: 0.2
+        },
         pdfFontSize: 15, // default font size of text labels in pdf document
         pdfPrintGraticule: true, // isn;t implemented yet
         pdfPrintScaleMeter: true, // isn;t implemented yet
@@ -70,6 +82,12 @@ L.Control.Pdf = L.Control.extend({
         if (options) {
             L.setOptions(this, options)
         }
+
+        this.options.progressSplashScreenStyle = Object.assign({}, progressSplashScreenDefaultStyle, this.options.progressSplashScreenStyle)
+
+        this.pixelRatio = this.options.imagePixelRatio || 1 // experimental, for HIDPI devices with retina screens and display scaling,
+                                                            // we need to generate images with correct DPI value written to the image
+        this.baseImageDpi = 72;
         this.map = map;
         this.area = null; //region to print, can contain any Leaflet object that has getBounds method
 
@@ -117,8 +135,7 @@ L.Control.Pdf = L.Control.extend({
 
         this.setScale(this.options.scale)
         this.setImageFormat(this.options.imageFormat);
-        this.setPagePreviewStrokeColor(this.options.pagePreviewStrokeColor);
-        this.setPagePreviewFillColor(this.options.pagePreviewFillColor);
+        this.setRectPreviewStyle(this.options.rectanglePreviewStyle)
         this.setPageFormat(this.options.pageFormat)
         this.setPageOrientation(this.options.pageOrientation)
         this.setPageMargin(this.options.pageMargin)
@@ -315,7 +332,7 @@ L.Control.Pdf = L.Control.extend({
      * computes pages data according current map state and pages and pdf settings
      * @returns {object} pages data that is used to page generation
      */
-    computePages: function () {
+    calcPdfPages: function () {
         if (this.area === null)
             return null;
 
@@ -386,7 +403,7 @@ L.Control.Pdf = L.Control.extend({
      * @param extendToSquare
      * @returns {{dimensionsAtCurrentZoom: {hpx: number, aapx: number, wpx: number}, targetScale: number, targetZoom: number, rects: *[], rectsAtCurrentZoom: []}}
      */
-    computeImages: function (targetSizePx, paddingPx, extendToSquare) {
+    calcImages: function (targetSizePx, paddingPx, extendToSquare) {
         if (this.area === null)
             return null;
 
@@ -400,9 +417,11 @@ L.Control.Pdf = L.Control.extend({
         //todo create Rectangle object and perform some calculations using his methods
         let areaRect = new Rectangle(this.map.project(bounds.getNorthWest()), this.map.project(bounds.getSouthEast()))
 
+        // scale from current zoom to target resolution
         let targetScale = targetSizePx / Math.max(areaRect.width, areaRect.height)
         let scaledPadding = paddingPx / targetScale
 
+        // extend area with padding
         areaRect = areaRect.pad(scaledPadding)
 
         if (extendToSquare)
@@ -478,14 +497,14 @@ L.Control.Pdf = L.Control.extend({
      * shows pages preview rectangles on the map
      * @returns {{hmmPaper, regionCenter: *, sWorld: (*|number), sPaper: number, pmmPaper: number, wmmPaper}}
      */
-    showPages: function (printData) {
+    showPdfPages: function (printData) {
         if (this.area === null || this.status !== StatusReady) {
             console.error("pdf: pdf creating is already in progress")
             return null
         }
 
         if (! printData)
-            printData = this.computePages()
+            printData = this.calcPdfPages()
 
         if (printData) {
             this._showPageRectangles(printData.rectsAtCurrentZoom, printData.dimensionsAtCurrentZoom.ppx)
@@ -495,6 +514,21 @@ L.Control.Pdf = L.Control.extend({
         return printData
     },
 
+    showImageRegions: function (imageData) {
+        if (this.area === null || this.status !== StatusReady) {
+            console.error("pdf: is already in progress")
+            return null
+        }
+
+        if (! imageData) {
+            this.hidePages()
+            return
+        }
+
+        this._showPageRectangles(imageData.rectsAtCurrentZoom, imageData.dimensionsAtCurrentZoom.aapx)
+
+        return imageData
+    },
     /**
      * hides pages preview rectangles on the map
      */
@@ -514,7 +548,16 @@ L.Control.Pdf = L.Control.extend({
         if (this.options.debug) {
             this.debugRectGroup.clearLayers()
         }
-        this.progressDiv.style.display = "block"
+        if (this.options.showProgressSplashScreen) {
+            Object.assign(this.progressDiv.style, {
+                display: "flex",
+                height: window.visualViewport.height+'.px',
+                width: window.visualViewport.width+'.px',
+                position: "fixed",
+                top: 0,
+                left: 0,
+            });
+        }
         this._disableInput();
         this.css.disabled = false
     },
@@ -571,7 +614,7 @@ L.Control.Pdf = L.Control.extend({
             return false
         }
 
-        let pagesData = this.computePages()
+        let pagesData = this.calcPdfPages()
         this.status = StatusAtWork
         this.fireStarted(pagesData)
         this._lockMap()
@@ -580,7 +623,7 @@ L.Control.Pdf = L.Control.extend({
         this._createImages(pagesData.rects, pagesData.pagesToPrint, pagesData.targetZoom, this.imageFormat);
     },
 
-    createImage: function (sizePx, paddingPx, extendToSquare, noBlur = false) {
+    createImage: function (targetSizePx, paddingPx, extendToSquare, performScaleToTargetSize = false) {
         if (this.status !== StatusReady) {
             return false
         }
@@ -590,16 +633,16 @@ L.Control.Pdf = L.Control.extend({
             this.fireFinish(blob)
         }.bind(this)
 
-        let imagesData = this.computeImages(sizePx, paddingPx, extendToSquare)
+        let imagesData = this.calcImages(targetSizePx, paddingPx, extendToSquare)
 
         let rect = imagesData.rects[0]
-        let resultWidth = sizePx
-        let resultHeight = sizePx
+        let resultWidth = targetSizePx
+        let resultHeight = targetSizePx
         if (! extendToSquare) {
             if (rect.width >= rect.height) {
-                resultHeight = Math.round(rect.height / (rect.width / sizePx))
+                resultHeight = Math.round(rect.height / (rect.width / targetSizePx))
             } else {
-                resultWidth = Math.round(rect.width / (rect.height / sizePx))
+                resultWidth = Math.round(rect.width / (rect.height / targetSizePx))
             }
         }
 
@@ -612,23 +655,24 @@ L.Control.Pdf = L.Control.extend({
                 finish()
                 return
             }
-            if (noBlur) {
-                this._startDownload(data.detail.images[0], this.options.imageFormat === 'jpeg' ? 'jpg' : this.options.imageFormat)
+            if (! performScaleToTargetSize) {
+                this._startDownload(data.detail.images[0], this.imageFormat === 'jpeg' ? 'jpg' : this.imageFormat)
                 finish(data.detail.images[0])
             } else {
                 // todo there are some possible improvement to reduce vector layers blur on rendered image resizing.
                 //      we can render vector layers separately at target scale and than mix them with raster layers
                 resizeImage(data.detail.images[0], resultWidth, resultHeight).then(function (imageUrl) {
-                        this._startDownload(imageUrl, this.options.imageFormat === 'jpeg' ? 'jpg' : this.options.imageFormat)
+                        this._startDownload(imageUrl, this.imageFormat === 'jpeg' ? 'jpg' : this.imageFormat)
                         finish(imageUrl)
                     }.bind(this)
                 ).catch(function (er) {
+                    console.error(er)
                     finish()
                 })
             }
         }.bind(this), {once: true});
 
-        this._createImages([rect], null, imagesData.targetZoom, noBlur ? this.options.imageFormat :'blob');
+        this._createImages([rect], null, imagesData.targetZoom, performScaleToTargetSize ? 'blob' :this.imageFormat);
 
     },
     /**
@@ -790,6 +834,11 @@ L.Control.Pdf = L.Control.extend({
             })
         }
 
+        /**
+         * it's better to use html-to-image or alternate package, but
+         * html-to-image package has a bug with resulting image (one tile is displayed on the map)
+         * need to investigate
+         */
         if (imageFormat === "jpeg") {
             imageGenerator = domtoimage.toJpeg
         } else if (imageFormat === "png") {
@@ -801,8 +850,8 @@ L.Control.Pdf = L.Control.extend({
         let generateImage = function (ev) {
             let i = ev.detail.i
             let r = rects[indexes[i]]
-            //width: Math.round(r.width), height: Math.round(r.height)
-            let scale = 2
+            // we do scale to improve image quality of vector data rendering on retina screens
+            let scale = this.pixelRatio
             let options = {
                 width: Math.round(r.width) * scale,
                 height: Math.round(r.height) * scale,
@@ -814,14 +863,22 @@ L.Control.Pdf = L.Control.extend({
             }
 
             imageGenerator(this.map.getContainer(), options)
-                .then(function (dataUrl) {
+                .then(function (data) {
                     if (this.status === StatusAborted) {
                         finish()
                         return;
                     }
-                    images.push(dataUrl)
+                    // if scale > 1 fix images DPI value to correct display on retina screens
+                    if (scale > 1 && data instanceof Blob) {
+                        changeDpiBlob(data, this.baseImageDpi * this.pixelRatio).then(function (data) {
+                            images.push(data)
+                            document.dispatchEvent(new CustomEvent("pdf:startNextImage", {detail: {i:i+1}}))
+                        })
+                    } else if (scale > 1) {
+                        data = changeDpiDataUrl(data, this.baseImageDpi * this.pixelRatio);
+                    }
+                    images.push(data)
                     document.dispatchEvent(new CustomEvent("pdf:startNextImage", {detail: {i:i+1}}))
-                    //createImage(i+1);
                 }.bind(this))
                 .catch(function (er) {
                     console.error("_createImages:domtoimage: got error", er)
@@ -997,18 +1054,10 @@ L.Control.Pdf = L.Control.extend({
             bigRect = [this.map.unproject(bigRect.min), this.map.unproject(bigRect.max)];
 
             L.rectangle(bigRect,
-                {stroke: true,
-                    weight: 1,
-                    opacity: this.rectStrokeOpacity,
-                    color: this.rectStrokeColor,
-                    fillColor: this.rectFillColor,
-                    fillOpacity: this.rectFillOpacity}).addTo(this.rectGroup);
+                Object.assign({}, this.rectPreviewStyle)).addTo(this.rectGroup);
+
             L.rectangle(smallRect,
-                {stroke: true,
-                    weight: 1,
-                    opacity: this.rectStrokeOpacity,
-                    color: this.rectStrokeColor,
-                    fill: false}).addTo(this.rectGroup);
+                Object.assign({}, this.rectPreviewStyle, {fill: false})).addTo(this.rectGroup);
         }
         if (this.rectGroup._map == null) {
             this.rectGroup.addTo(this.map);
@@ -1240,15 +1289,12 @@ L.Control.Pdf = L.Control.extend({
         this.imageFormat = format;
     },
 
-    setPagePreviewFillColor: function(color, opacity = 0.2) {
-        this.rectFillColor = color;
-        this.rectFillOpacity = opacity;
+    setRectPreviewStyle: function (style) {
+        if (!style) {
+            style = this.options.rectanglePreviewStyle
+        }
+        this.rectPreviewStyle = Object.assign({}, style)
     },
-
-    setPagePreviewStrokeColor: function(color, opacity = 1.0) {
-        this.rectStrokeColor = color;
-        this.rectStrokeOpacity = opacity;
-    }
 })
 
 /**
