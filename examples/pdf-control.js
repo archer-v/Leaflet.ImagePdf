@@ -301,7 +301,7 @@ L.Control.PdfControl = L.Control.extend({
 			this.pdf.setPageSize(this.inputWidth.value, this.inputHeight.value)
 		}
 
-		let pd = this.pdf.showPages()
+		let pd = this.pdf.showPdfPages()
 
 		if (pd === null) {
 			this.inputDPI.innerHTML = ""
