@@ -11,6 +11,8 @@ export function resizeImage(imageBlob, newWidth, newHeight) {
             .then(imageBitmap => {
                 ctx.drawImage(imageBitmap, 0, 0)
                 resolve(canvas.toDataURL(imageBlob.type,  0.9))
+            }).catch( function (er) {
+                reject(er)
             })
     });
 }
