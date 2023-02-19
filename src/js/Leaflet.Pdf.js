@@ -144,7 +144,7 @@ L.Control.Pdf = L.Control.extend({
     },
 
     destroy: function () {
-        this.hidePages()
+        this.hideImageRegions()
         this.map.removeLayer(this.rectGroup);
         this.map._container.remove(this.progressDiv)
     },
@@ -240,7 +240,7 @@ L.Control.Pdf = L.Control.extend({
 
         pageCount *= 1
         let pageSize = this._orientedPageSize()
-        let bounds = this.area.getBounds()
+        let bounds = (this.area instanceof L.LatLngBounds) ? this.area : this.area.getBounds()
         let topLeft = this.map.project(bounds.getNorthWest())
         let bottomRight = this.map.project(bounds.getSouthEast())
         let areaW = bottomRight.x - topLeft.x // area width in points
@@ -262,7 +262,8 @@ L.Control.Pdf = L.Control.extend({
             return 0
         }
 
-        if (pageCount === 1 && (! this.area instanceof L.Polygon))
+        // for route with one page covering returns the scale for route bounds
+        if (pageCount === 1 && algorithm === AlgCoverPath)
             return onePagesScale
 
         if (algorithm === AlgCoverArea) {
@@ -320,7 +321,9 @@ L.Control.Pdf = L.Control.extend({
     },
 
     rectanglesEvaluationMethod: function (LObject) {
-        if ( LObject instanceof L.Polygon || (LObject instanceof L.Polyline && this.isPagesPaging() && this.pageCount == 1)) {
+        if ( LObject instanceof L.LatLngBounds ||
+             LObject instanceof L.Polygon ||
+            (LObject instanceof L.Polyline && this.isPagesPaging() && this.pageCount == 1)) {
             return AlgCoverArea
         } else if ( LObject instanceof L.Polyline) {
             return AlgCoverPath
@@ -333,10 +336,10 @@ L.Control.Pdf = L.Control.extend({
      * @returns {object} pages data that is used to page generation
      */
     calcPdfPages: function () {
-        if (this.area === null)
+        if (!this.area)
             return null;
 
-        if (this.area._map === null) {
+        if (this.area instanceof L.Polyline && !this.area._map) {
             // object is not added to the map (or removed)
             return null;
         }
@@ -404,15 +407,15 @@ L.Control.Pdf = L.Control.extend({
      * @returns {{dimensionsAtCurrentZoom: {hpx: number, aapx: number, wpx: number}, targetScale: number, targetZoom: number, rects: *[], rectsAtCurrentZoom: []}}
      */
     calcImages: function (targetSizePx, paddingPx, extendToSquare) {
-        if (this.area === null)
+        if (!this.area)
             return null;
 
-        if (this.area._map === null) {
+        if (this.area instanceof L.Polyline && !this.area._map) {
             // if object is not added to the map (or removed)
             return null;
         }
 
-        let bounds = this.area.getBounds()
+        let bounds = this.area instanceof L.LatLngBounds ? this.area : this.area.getBounds()
 
         //todo create Rectangle object and perform some calculations using his methods
         let areaRect = new Rectangle(this.map.project(bounds.getNorthWest()), this.map.project(bounds.getSouthEast()))
@@ -507,9 +510,9 @@ L.Control.Pdf = L.Control.extend({
             printData = this.calcPdfPages()
 
         if (printData) {
-            this._showPageRectangles(printData.rectsAtCurrentZoom, printData.dimensionsAtCurrentZoom.ppx)
+            this._showRectangles(printData.rectsAtCurrentZoom, printData.dimensionsAtCurrentZoom.ppx)
         } else {
-            this.hidePages()
+            this.hideImageRegions()
         }
         return printData
     },
@@ -521,18 +524,18 @@ L.Control.Pdf = L.Control.extend({
         }
 
         if (! imageData) {
-            this.hidePages()
+            this.hideImageRegions()
             return
         }
 
-        this._showPageRectangles(imageData.rectsAtCurrentZoom, imageData.dimensionsAtCurrentZoom.aapx)
+        this._showRectangles(imageData.rectsAtCurrentZoom, imageData.dimensionsAtCurrentZoom.aapx)
 
         return imageData
     },
     /**
      * hides pages preview rectangles on the map
      */
-    hidePages: function () {
+    hideImageRegions: function () {
         this.rectGroup.clearLayers();
     },
 
@@ -541,7 +544,8 @@ L.Control.Pdf = L.Control.extend({
             width: this.map.getContainer().style.width,
             height: this.map.getContainer().style.height,
             center: this.map.getCenter(),
-            zoom: this.map.getZoom()
+            zoom: this.map.getZoom(),
+            imageRectangles: !!(this.rectGroup._map),
         }
         // todo add rectGroup css selector to node filter, and we can avoid removing the layer
         this.map.removeLayer(this.rectGroup);
@@ -566,6 +570,9 @@ L.Control.Pdf = L.Control.extend({
         this.map.getContainer().style.width = this.savedMapState.width;
         this.map.getContainer().style.height = this.savedMapState.height;
         this.map.setView(this.savedMapState.center, this.savedMapState.zoom, {animate: false})
+        if (this.savedMapState.imageRectangles) {
+            this.map.addLayer(this.rectGroup)
+        }
         this.map.invalidateSize();
         this.progressDiv.style.display = "none"
         //this.map.addLayer(this.rectGroup);
@@ -615,6 +622,10 @@ L.Control.Pdf = L.Control.extend({
         }
 
         let pagesData = this.calcPdfPages()
+
+        if (!pagesData)
+            return false
+
         this.status = StatusAtWork
         this.fireStarted(pagesData)
         this._lockMap()
@@ -634,6 +645,9 @@ L.Control.Pdf = L.Control.extend({
         }.bind(this)
 
         let imagesData = this.calcImages(targetSizePx, paddingPx, extendToSquare)
+
+        if (!imagesData)
+            return false
 
         let rect = imagesData.rects[0]
         let resultWidth = targetSizePx
@@ -1044,7 +1058,7 @@ L.Control.Pdf = L.Control.extend({
         return sWorld;
     },
 
-    _showPageRectangles: function (rects, p) {
+    _showRectangles: function (rects, p) {
         this.rectGroup.clearLayers();
         for (let i = 0; i < rects.length; i++) {
             let bigRect = rects[i];
@@ -1065,11 +1079,22 @@ L.Control.Pdf = L.Control.extend({
     },
 
     _getBoxRectangles: function (LObject, w, h, p, areaPadding, o) {
-        if (LObject === null || typeof LObject.getBounds !== "function")
+        if (LObject === null)
             return []
 
-        let topLeft = this.map.project(LObject.getBounds().getNorthWest()).subtract([areaPadding,areaPadding])
-        let bottomRight = this.map.project(LObject.getBounds().getSouthEast()).add([areaPadding,areaPadding])
+        let bounds = null
+
+        if ( LObject instanceof L.LatLngBounds)
+            bounds = LObject
+
+        if ( typeof LObject.getBounds == "function" )
+            bounds = LObject.getBounds()
+
+        if (!bounds)
+            return []
+
+        let topLeft = this.map.project(bounds.getNorthWest()).subtract([areaPadding,areaPadding])
+        let bottomRight = this.map.project(bounds.getSouthEast()).add([areaPadding,areaPadding])
 
         const rects = coverAreaWithRectangles(topLeft, bottomRight, w-2*p, h-2*p)
 
@@ -1169,12 +1194,14 @@ L.Control.Pdf = L.Control.extend({
     },
 
     setArea: function (area) {
-        if (typeof area === 'object' && typeof area.getBounds !== 'function') {
-            throw new Error("the area must have getBounds method")
+        if (typeof area === 'object') {
+            if (! (area instanceof L.LatLngBounds) && typeof area.getBounds !== 'function') {
+                throw new Error("the area should be instance of LatLngBounds class, or must have getBounds method")
+            }
         }
         this.area = area
         if (!area) {
-            this.hidePages()
+            this.hideImageRegions()
         }
     },
 
