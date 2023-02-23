@@ -21,6 +21,7 @@ const AlgCoverPath = 2
 
 export const OpGenerateImage = "image"
 export const OpCreatePage = "page"
+export const OpLoadTiles = "tile"
 
 let progressSplashScreenDefaultStyle = {width: "100vw", height: "100vw", background: "white", "z-index": 950, position: "fixed", top: "0px", left: "0px", "justify-content": "center", "align-items": "center"}
 
@@ -546,6 +547,7 @@ L.Control.Pdf = L.Control.extend({
             center: this.map.getCenter(),
             zoom: this.map.getZoom(),
             imageRectangles: !!(this.rectGroup._map),
+            containerOverflow: this.map._container.parentElement.style.overflow
         }
         // todo add rectGroup css selector to node filter, and we can avoid removing the layer
         this.map.removeLayer(this.rectGroup);
@@ -561,6 +563,7 @@ L.Control.Pdf = L.Control.extend({
                 top: 0,
                 left: 0,
             });
+            this.map._container.parentElement.style.overflow = "hidden" // hide scrollbars
         }
         this._disableInput();
         this.css.disabled = false
@@ -573,6 +576,7 @@ L.Control.Pdf = L.Control.extend({
         if (this.savedMapState.imageRectangles) {
             this.map.addLayer(this.rectGroup)
         }
+        this.map._container.parentElement.style.overflow = this.savedMapState.containerOverflow
         this.map.invalidateSize();
         this.progressDiv.style.display = "none"
         //this.map.addLayer(this.rectGroup);
@@ -939,20 +943,31 @@ L.Control.Pdf = L.Control.extend({
 
                 //need to wait the all tiles is loaded
                 let timer = setInterval(function () {
-                    if (new Date().getTime() - timestamp > this.options.tilesLoadingTimeout) {
-                        this.status = StatusAborted
-                        this.fireAborted("timeout")
-                    }
                     if (this.status === StatusAborted) {
                         clearInterval(timer);
                         finish()
                         return;
                     }
-                    if (this._isTilesLoaded(this.map)) {
+                    let [totalTiles, loadedTiles, loadingLayer] = this._loadedTiles(this.map)
+                    if (this.options.debug) {
+                        console.log(`tiles loaded: ${loadedTiles} from ${totalTiles}`)
+                    }
+                    this.fireProgress(OpLoadTiles, loadedTiles, totalTiles, null)
+                    if (totalTiles === loadedTiles) {
                         clearInterval(timer);
                         document.dispatchEvent(new CustomEvent("pdf:documentTilesLoaded", {detail: {i:i}}))
+                        return
                     }
-                }.bind(this), 50);
+                    if (new Date().getTime() - timestamp > this.options.tilesLoadingTimeout) {
+                        if (this.options.debug) {
+                            console.log(`Aborted due to tiles loading timeout of the layer: ${loadingLayer._url}`)
+                        }
+                        this.status = StatusAborted
+                        this.fireAborted("timeout", loadingLayer)
+                        clearInterval(timer);
+                        finish()
+                    }
+                }.bind(this), 200);
             } catch (e) {
                 console.error("prepareDocumentForImaging: got error", e)
                 this.fireAborted("internal error")
@@ -968,17 +983,27 @@ L.Control.Pdf = L.Control.extend({
     /**
      * checks if all tiles is loaded
      * @param map
-     * @returns {boolean}
+     * @returns {number[]}
      * @private
      */
-    _isTilesLoaded: function(map){
+    _loadedTiles: function(map){
+        let totalTiles = 0
+        let loadedTiles = 0
+        let stillLoadingLayer = null
         for (let l in map._layers) {
             let layer = map._layers[l];
-            if ((layer._url || layer._mutant) && layer._loading) {
-                return false
+            if (layer._url || layer._mutant) {
+                totalTiles += layer._level.el.childNodes.length
+                loadedTiles += layer._level.el.querySelectorAll("img.leaflet-tile-loaded").length
+                if (layer._loading && stillLoadingLayer === null) {
+                    stillLoadingLayer = layer
+                }
             }
         }
-        return true;
+        if (!stillLoadingLayer) {
+            loadedTiles = totalTiles
+        }
+        return [totalTiles, loadedTiles, stillLoadingLayer];
     },
 
     fireEvent: function (name, data) {
@@ -997,8 +1022,8 @@ L.Control.Pdf = L.Control.extend({
         this.fireEvent("progress", {operation: operation, itemNo: itemNo, totalItems: totalItems, item: item})
     },
 
-    fireAborted: function (reason) {
-        this.fireEvent("aborted", {reason: reason})
+    fireAborted: function (reason, data) {
+        this.fireEvent("aborted", {reason: reason, data: data})
     },
 
     _getAttribution: function() {
