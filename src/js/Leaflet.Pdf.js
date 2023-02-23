@@ -71,7 +71,7 @@ L.Control.Pdf = L.Control.extend({
         pdfDocumentProperties: {    // properties to add to the PDF document // name-to-value object structure
             'creator': "Leaflet.Pdf"
         },
-        skipNodesWithCSS: ['div.leaflet-control-container', 'div.control-pane-wrapper', 'div.pdf-progress-plug'], // exclude these nodes from images
+        excludeNodesWithCSS: ['div.leaflet-control-container', 'div.control-pane-wrapper', 'div.pdf-progress-plug'], // exclude these nodes from images
         pdfPageCb: null, // callback function(pdf, pageNumber) that calls on every pdf page generation
                          // you can use it to add you custom text or data to pdf pages (see jspdf spec on how to operate with pdf document)
         nodeFilterCb: null, // callback function(domNode) that calls on every dom element and should return true or false
@@ -836,7 +836,7 @@ L.Control.Pdf = L.Control.extend({
         let filter = function (nodeElement) {
             //console.log(node.nodeName + "." + node.className)
             if (nodeElement.matches)
-                for (let s of this.options.skipNodesWithCSS) {
+                for (let s of this.options.excludeNodesWithCSS) {
                     if (nodeElement.matches(s))
                         return false
                 }
