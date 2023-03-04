@@ -23,7 +23,7 @@ export const OpGenerateImage = "image"
 export const OpCreatePage = "page"
 export const OpLoadTiles = "tile"
 
-let progressSplashScreenDefaultStyle = {width: "100vw", height: "100vw", background: "white", "z-index": 950, position: "fixed", top: "0px", left: "0px", "justify-content": "center", "align-items": "center"}
+let progressSplashScreenDefaultStyle = {width: "100vw", height: "100vh", background: "white", "z-index": 950, position: "fixed", top: "0px", left: "0px", "justify-content": "center", "align-items": "center"}
 
 L.Control.Pdf = L.Control.extend({
     options: {
