@@ -1,3 +1,42 @@
+
+/**
+ * areaRectanglesCount counts rectangles count need to cover the area
+ * @param tlc {L.Point} top left corner
+ * @param brc {L.Point} top right corner
+ * @param w {number} rectangle width
+ * @param h {number} rectangle height
+ */
+export function areaRectanglesCount(tlc, brc, w, h) {
+    return [Math.ceil((brc.x - tlc.x) / w), Math.ceil((brc.y - tlc.y) / h)]
+}
+/**
+ * coverAreaWithRectangles returns array of rectangles that cover the area
+ * @param tlc {L.Point} top left corner
+ * @param brc {L.Point} bottom right corner
+ * @param w {number}  width in points
+ * @param h {number}  height in points
+ */
+export function coverAreaWithRectangles(tlc, brc, w, h) {
+
+    let rects = []
+
+    let [wPages, hPages] = areaRectanglesCount(tlc, brc, w, h)
+    let startX = tlc.x
+    let startY = tlc.y
+
+    // cover area with rectangles
+    for (let i = 0; i < hPages; i++) {
+        for (let j = 0; j < wPages; j++) {
+            let x = startX + j * w
+            let y = startY + i * h
+            rects.push(new Rectangle(L.point(x, y), L.point(x + w, y + h)))
+        }
+    }
+    return rects
+}
+
+// coverLineWithRectangle and coverLineWithRectangles functions originally was written by Herman Sletmoen <https://github.com/hersle/leaflet-route-print>
+
 export function coverLineWithRectangles(l, w, h, mix) {
     let rects = [];
     let intersections = [];
@@ -21,42 +60,6 @@ export function coverLineWithRectangles(l, w, h, mix) {
         i1 = i2;
     }
     return [rects, intersections];
-}
-
-/**
- *
- * @param tlc {L.Point} top left corner
- * @param brc {L.Point} top right corner
- * @param w {number} rectangle width
- * @param h {number} rectangle height
- */
-export function areaRectanglesCount(tlc, brc, w, h) {
-    return [Math.ceil((brc.x - tlc.x) / w), Math.ceil((brc.y - tlc.y) / h)]
-}
-/**
- *
- * @param tlc {L.Point} top left corner
- * @param brc {L.Point} top right corner
- * @param w {number}  width in points
- * @param h {number}  height in points
- */
-export function coverAreaWithRectangles(tlc, brc, w, h) {
-
-    let rects = []
-
-    let [wPages, hPages] = areaRectanglesCount(tlc, brc, w, h)
-    let startX = tlc.x
-    let startY = tlc.y
-
-    // cover area with rectangles
-    for (let i = 0; i < hPages; i++) {
-        for (let j = 0; j < wPages; j++) {
-            let x = startX + j * w
-            let y = startY + i * h
-            rects.push(new Rectangle(L.point(x, y), L.point(x + w, y + h)))
-        }
-    }
-    return rects
 }
 
 function coverLineWithRectangle(l, w, h, i1) {
