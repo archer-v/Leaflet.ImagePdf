@@ -25,18 +25,17 @@ export const OpLoadTiles = "tile"
 
 let progressSplashScreenDefaultStyle = {width: "100vw", height: "100vh", background: "white", "z-index": 950, position: "fixed", top: "0px", left: "0px", "justify-content": "center", "align-items": "center"}
 
-L.Control.Pdf = L.Control.extend({
+L.Control.ImagePdf = L.Control.extend({
     options: {
         pageFormat: "A4",
         pageOrientation: PageOrientationPortrait,
-        pageMargin: 10, //mm
-        areaPadding: 10, //mm, add padding to the area
-        pagingMethod: 'pages',  // define paging method for multi-page pdf generation
-                                // (possible values 'pages' | 'scale'), it's better to use 'pages'
-                                // 'scale' method now is buggy
-        scale: 50000,           // default starting scale for 'scale' paging method
-        pageCount: 1,           // default pages count for 'pages' paging method
-        dpi: 300,               // define max target images dpi, it defines how deep the map will be zoomed to create images
+        pageMargin: 10,         // pdf option, page margin in mm
+        areaPadding: 10,        // pdf option, add padding to the area in mm
+        pagingMethod: 'pages',  // pdf option, define paging method for multi-page pdf generation
+                                // (possible values 'pages' | 'scale'), it's better to use 'pages' because 'scale' method now is not properly tested
+        scale: 50000,           // pdf option, default starting scale for 'scale' paging method
+        pageCount: 1,           // pdf option, default pages count for 'pages' paging method
+        dpi: 300,               // pdf option, define max target images dpi, it defines how deep the map will be zoomed to create images
                                 // the resulting image dpi depends on available tiles images resolution and page size in mm
                                 // the better available dpi will be used
                                 // higher dpi value leads to downloading more tiles and greatly increase images generation time
@@ -46,11 +45,11 @@ L.Control.Pdf = L.Control.extend({
         outputFileName: "map.pdf", // can be with or without file extension
         downloadOnFinish: false, // starts browser's file download process in order to save pdf file
         tilesLoadingTimeout: 10000, // msec, timeout for tile loading on every page(image) generation
-        imageFormat: "jpeg",    // 'jpeg' or 'png'
+        imageFormat: "jpeg",    // pdf and image option, 'jpeg' or 'png'
         imagePixelRatio: 1,     // for generate images for retina screens. set to 2 or window.devicePixelRatio
         showProgressSplashScreen: true,
         progressSplashScreenStyle: progressSplashScreenDefaultStyle,
-        rectanglePreviewStyle: {
+        rectanglePreviewStyle: { // defines the style of area preview rectangle
             stroke: true,
             weight: 1,
             opacity: 1,
@@ -58,24 +57,24 @@ L.Control.Pdf = L.Control.extend({
             fillColor: "gray",
             fillOpacity: 0.2
         },
-        pdfFontSize: 15, // default font size of text labels in pdf document
-        pdfPrintGraticule: true, // isn;t implemented yet
-        pdfPrintScaleMeter: true, // isn;t implemented yet
+        pdfFontSize: 15,            // default font size of text labels in pdf document
+        pdfPrintGraticule: true,    // isn;t implemented yet
+        pdfPrintScaleMeter: true,   // isn;t implemented yet
         pdfSheetPageNumber: {       // add page number to a sheet at defined position
             position: "bottomright",
         },
         pdfSheetAttribution: {      // add attribution text to a sheet at defined position
             position: "topleft",
-            text: "Created with Leaflet.Pdf"
+            text: "Created with Leaflet.ImagePdf"
         },
         pdfDocumentProperties: {    // properties to add to the PDF document // name-to-value object structure
-            'creator': "Leaflet.Pdf"
+            'creator': "Leaflet.ImagePdf"
         },
-        excludeNodesWithCSS: ['div.leaflet-control-container', 'div.control-pane-wrapper', 'div.pdf-progress-plug'], // exclude these nodes from images
-        pdfPageCb: null, // callback function(pdf, pageNumber) that calls on every pdf page generation
-                         // you can use it to add you custom text or data to pdf pages (see jspdf spec on how to operate with pdf document)
-        nodeFilterCb: null, // callback function(domNode) that calls on every dom element and should return true or false
-                            // in order to include or exclude element from images and pdf
+        excludeNodesWithCSS: ['div.leaflet-control-container', 'div.leaflet-control', 'div.pdf-progress-plug'], // exclude these dom nodes from the result images
+        pdfPageCb: null,        // callback function(pdf, pageNumber) that calls on every pdf page generation
+                                // you can use it to add you custom text or data to pdf pages (see jspdf spec on how to operate with pdf document)
+        nodeFilterCb: null,     // callback function(domNode) that calls on every dom element and should return true or false
+                                // in order to include or exclude element from images and pdf
         debug: false,
     },
 
@@ -1355,6 +1354,6 @@ L.Control.Pdf = L.Control.extend({
  * @param options
  * @returns {L.Pdf}
  */
-L.pdf = function (map, options) {
-    return new L.Control.Pdf(map, options);
+L.imagePdf = function (map, options) {
+    return new L.Control.ImagePdf(map, options);
 };
