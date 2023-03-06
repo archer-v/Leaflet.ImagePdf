@@ -1,6 +1,5 @@
 .project
 node_modules/
 .idea/
-dist/
 package-lock.json
 deploy.sh
