@@ -16,7 +16,8 @@ L.Control.PdfControl = L.Control.extend({
 		if (options) {
 			L.setOptions(this, options)
 		}
-		this.hasRoute = false;
+		this.area = null;
+		this.pdf = this.options.pdf
 
 		this.css = document.createElement("style");
 		document.head.appendChild(this.css)
@@ -29,13 +30,6 @@ L.Control.PdfControl = L.Control.extend({
 
 	onAdd: function(map) { // constructor
 		this.map = map;
-
-		if (this.options.pdf === null) {
-			console.warn("It would be better the pdf component were defined in options")
-			this.pdf = L.pdf(this.map)
-		} else {
-			this.pdf = this.options.pdf
-		}
 
 		var divWrapper = this._createElement("div", {className: "leaflet-bar leaflet-control pdf-control"}, {backgroundColor: "white"});
 		L.DomEvent.disableClickPropagation(divWrapper);
@@ -176,7 +170,7 @@ L.Control.PdfControl = L.Control.extend({
 				}
 				this.pdf.setPagesToPrint(pages);
 			}
-			this.previewRoute(); // update this field
+			this.updatePreview(); // update this field
 		}.bind(this));
 		this.inputPagesToPrint.addEventListener("input", function() {
 			this.inputPagesToPrint.style.width = `${this.inputPagesToPrint.value.length}ch`;
@@ -193,12 +187,10 @@ L.Control.PdfControl = L.Control.extend({
 
 		divControls.append(container);
 
-		// TODO: improve organization of wrapper, header, button, etc.
-
 		var divButton = this._createElement("div", {}, {display: "flex", justifyContent: "space-between", borderBottom: "1px solid black"}); // float left and right using https://stackoverflow.com/a/10277235
 
-		var header = this._createElement("p", {innerHTML: "<b>Pages settings</b>"}, {margin: "0", fontSize: "13px", padding: divControls.style.borderSpacing}); // padding should be same as borderSpacing in divControls
-		var button = this._createElement("a", {innerHTML: "✖", href: "#"}, {display: "inline-block", width: "30px", height: "30px", lineHeight: "30px", fontSize: "22px"});
+		var header = this._createElement("p", {innerHTML: "<b>Pdf pages settings</b>"}, {margin: "0", fontSize: "13px", padding: divControls.style.borderSpacing}); // padding should be same as borderSpacing in divControls
+		var button = this._createElement("a", {innerHTML: "✖", href: "#"}, {display: "inline-block", width: "30px", height: "30px", lineHeight: "30px", fontSize: "13px"});
 		var help = this._createElement("a", {innerHTML: "?", title: "You get what you see! Zoom the map to your preferred level of detail, modify these settings and hit Print. The color of the DPI value indicates the print quality.", href: "#"}, {display: "inline-block", width: "30px", height: "30px", lineHeight: "30px", fontSize: "22px", cursor: "help"});
 		button.addEventListener("click", function() {
 			if (divControls.style.display == "none") {
@@ -209,7 +201,7 @@ L.Control.PdfControl = L.Control.extend({
 			} else {
 				divControls.style.display = "none";
 				header.style.display = "none";
-				button.innerHTML = "P";
+				button.innerHTML = "Pdf";
 				help.style.display = "none";
 			}
 		});
@@ -219,35 +211,36 @@ L.Control.PdfControl = L.Control.extend({
 
 		divWrapper.append(divButton, divControls);
 
-		this.inputScale.addEventListener("change", this.previewRoute.bind(this));
-		this.inputPages.addEventListener("change", this.previewRoute.bind(this));
+		this.inputScale.addEventListener("change", this.updatePreview.bind(this));
+		this.inputPages.addEventListener("change", this.updatePreview.bind(this));
 		this.inputWidth.addEventListener("change", function () {
 			this.inputPreset.selectedIndex = 0
-			this.previewRoute()
+			this.updatePreview()
 		}.bind(this));
 		this.inputHeight.addEventListener("change", function () {
 			this.inputPreset.selectedIndex = 0
-			this.previewRoute()
+			this.updatePreview()
 		}.bind(this));
 
 		this.inputPreset.addEventListener("change", function(event) {
 			if (this.inputPreset.selectedIndex > 0) { // 0 is "free"
 				this.inputWidth.value = this.pdf.getPageFormats()[this.inputPreset.selectedIndex-1].width;
 				this.inputHeight.value = this.pdf.getPageFormats()[this.inputPreset.selectedIndex-1].height;
-				this.previewRoute();
+				this.updatePreview();
 			}
 		}.bind(this));
-		this.inputOrientation.addEventListener("change", this.previewRoute.bind(this));
-		this.inputMargin.addEventListener("change", this.previewRoute.bind(this));
-		this.inputPrint.onclick = this.printRoute.bind(this);
+		this.inputOrientation.addEventListener("change", this.updatePreview.bind(this));
+		this.inputMargin.addEventListener("change", this.updatePreview.bind(this));
+		this.inputPrint.onclick = this.createPdf.bind(this);
 		if (this.pdf.isScalePaging()) {
 			// need to recalculate dpi & pages sizes
 			// todo need to remove listener
-			this.map.on("zoomend", this.previewRoute, this);
+			this.map.on("zoomend", this.updatePreview, this);
 		}
 
 		this.map.on("pdf:progress", this.onProgress, this)
 
+		this.updatePreview()
 		return divWrapper;
 	},
 
@@ -260,11 +253,10 @@ L.Control.PdfControl = L.Control.extend({
 	},
 
 	onRemove: function () {
-		this.pdf.destroy()
-
 		// remove events
 		this.map.off("pdf:progress", this.onProgress)
-		this.map.off("zoomend", this.previewRoute, this);
+		this.map.off("zoomend", this.updatePreview, this);
+		this.pdf.hideImageRegions()
 
 		// todo need more accurate cleanup:
 		//  	hide everything that may be visible
@@ -275,8 +267,8 @@ L.Control.PdfControl = L.Control.extend({
 		this.printStatus.innerHTML = status == undefined ? "" : " " + status;
 	},
 
-	previewRoute: function(ev) {
-		if (!this.hasRoute) {
+	updatePreview: function(ev) {
+		if (!this.area || !this.map) {
 			return;
 		}
 
@@ -335,14 +327,14 @@ L.Control.PdfControl = L.Control.extend({
 		this.setPrintStatus();
 	},
 
-	printRoute: function() {
+	createPdf: function() {
 		let backupButtonHandler
 		let backupButtonColor
 		this.map.once("pdf:finish", function (data) {
-			this.inputPrint.value = "Print";
+			this.inputPrint.value = "Create pdf";
 			this.inputPrint.style.backgroundColor = backupButtonColor;
 			this.inputPrint.onclick = backupButtonHandler;
-			this.previewRoute()
+			this.updatePreview()
 			if (data.blob) {
 				this.downloadLink.href = URL.createObjectURL(data.blob);
 				this.downloadLink.click(); // download
@@ -364,12 +356,11 @@ L.Control.PdfControl = L.Control.extend({
 		this.pdf.createPdf()
 	},
 
-	setRoute: function(line) {
+	setArea: function(area) {
 		// line should already be added to map
-		this.line = line;
-		this.pdf.setArea(this.line)
-		this.hasRoute = true;
-		this.previewRoute();
+		this.area = area;
+		this.pdf.setArea(this.area)
+		this.updatePreview();
 	},
 
 	setImageFormat: function(format = "jpeg") {

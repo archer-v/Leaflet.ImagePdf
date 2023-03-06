@@ -16,9 +16,10 @@ function addGeometry(proto, data) {
 }
 
 function selectGeometry(id) {
-	pdfControl.setRoute(geometries[id]);
+	pdfControl.setArea(geometries[id]);
+	imageControl.setArea(geometries[id]);
 	// set map view to this route
-	map.fitBounds(geometries[id].getBounds(), {animate: false});
+	map.fitBounds(geometries[id].getBounds(), {animate: false, maxZoom: 14});
 }
 
 
@@ -33,28 +34,38 @@ let map = L.map("map", {
 
 // for debug purpose
 L.control.coordinates({
-	position:"topright", //optional default "bootomright"
-	labelTemplateLat:"Latitude: {y}", //optional default "Lat: {y}"
-	labelTemplateLng:"Longitude: {x}", //optional default "Lng: {x}"
-	useLatLngOrder: true, //ordering of labels, default false-> lng-lat
+	position:"topright",
+	labelTemplateLat:"Latitude: {y}",
+	labelTemplateLng:"Longitude: {x}",
+	useLatLngOrder: true,
 }).addTo(map);
 
 L.control.zoom({position: "topright"}).addTo(map);
 L.control.scale({metric: true, imperial: false}).addTo(map);
 
-map.setView([0, 0], 2);
+map.setView([0, 0], 10);
 
-let pdfFactory = L.pdf(map, {
+L.tileLayer(
+	"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+	{attribution: `© <a href="https://www.openstreetmap.org/copyright">"OpenStreetMap contributors"</a>`})
+	.addTo(map)
+
+let imagePdf = L.imagePdf(map, {
 	pageFormat: "A3",
-	debug: true,
+	debug: false,
 })
 
-pdfControl = new L.Control.PdfControl({pdf: pdfFactory}).addTo(map);
-geometrySelector = new L.Control.GeometrySelector(geometries, selectGeometry).addTo(map);
+pdfControl = new L.Control.PdfControl({pdf: imagePdf});
+imageControl = new L.Control.ImageControl({imagePdf: imagePdf});
+geometrySelector = new L.Control.GeometrySelector(geometries, selectGeometry, pdfControl, imageControl).addTo(map);
+geometrySelector.updateExportMode();
 
 addGeometry(L.rectangle, [[65.41, 12.55], [65.405, 12.53]])
-
+addGeometry(L.polygon, [[65.415, 12.55], [65.411, 12.52], [65.415, 12.52]])
 selectGeometry(0)
+
+L.marker([65.412, 12.54]).addTo(map)
+L.marker([65.4115, 12.545]).addTo(map).bindTooltip("Some point", {direction: 'top', permanent: true, className: "tooltip-label", offset: [-10, -13]}).openTooltip();
 
 fetch('./demo_route.json')
 	.then((response) => response.json())
@@ -66,7 +77,3 @@ fetch('./demo_route.json')
 	});
 
 
-L.tileLayer(
-	"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-	{attribution: `© <a href="https://www.openstreetmap.org/copyright">"OpenStreetMap contributors"</a>`})
-	.addTo(map)
