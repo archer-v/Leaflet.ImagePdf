@@ -5,7 +5,7 @@ module.exports = {
   mode: 'development',
   devtool: 'source-map',
   entry: {
-    app: './src/js/Leaflet.Pdf.js'
+    app: './src/js/Leaflet.ImagePdf.js'
   },
   externals: {
     leaflet: {
@@ -23,7 +23,7 @@ module.exports = {
   ],
   output: {
     path: path.resolve(__dirname, 'dist/'),
-    filename: 'Leaflet.Pdf.min.js',
+    filename: 'Leaflet.ImagePdf.min.js',
     library: 'leafletpdf',
     hashFunction: 'sha256'
   },
