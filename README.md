@@ -1,7 +1,7 @@
 # Leaflet.ImagePdf
 
 Leaflet plugin that creates an jpeg/png image or pdf document of selected map region directly from a browser. 
-A created image also includes all rendered vector layers, markers, tooltips, images, svg drawing, etc. Size, quality (dpi) and format can be defined in plugin options. 
+The image also includes all rendered vector layers, markers, tooltips, images, svg drawing, etc. Size, quality (dpi) and format can be defined in plugin options. 
 
 Pdf features: 
 - predefined page sizes (A0-A10, B0-B10, etc) and custom page sizes defined in mm
