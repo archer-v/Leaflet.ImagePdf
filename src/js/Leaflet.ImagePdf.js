@@ -670,7 +670,7 @@ L.Control.ImagePdf = L.Control.extend({
      * @param performScaleToTargetSize
      * @returns {boolean}
      */
-    createImage: function (targetSizePx, paddingPx, extendToSquare, performScaleToTargetSize = false) {
+    createImage: function (targetSizePx, paddingPx, extendToSquare, performScaleToTargetSize = true) {
         if (this.status !== StatusReady) {
             return false
         }
@@ -965,8 +965,6 @@ L.Control.ImagePdf = L.Control.extend({
 
                 this.map.getContainer().style.width = `${Math.ceil(w)}px`;
                 this.map.getContainer().style.height = `${Math.ceil(h)}px`;
-//                this.map.getContainer().style.width = `${w}px`;
-//                this.map.getContainer().style.height = `${h}px`;
                 this.map.invalidateSize();
                 this.map.setView(viewCenter, targetZoom, {animate: false});
 
@@ -1386,9 +1384,9 @@ L.Control.ImagePdf = L.Control.extend({
 
 /**
  *
- * @param id
+ * @param map
  * @param options
- * @returns {L.Pdf}
+ * @returns {L.Control.ImagePdf}
  */
 L.imagePdf = function (map, options) {
     return new L.Control.ImagePdf(map, options);
