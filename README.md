@@ -5,7 +5,7 @@ The image also includes all rendered vector layers, markers, tooltips, images, s
 
 ## Demonstration
 
-[mandalorian-one.github.io/Leaflet.ImagePdf](https://mandalorian-one.github.io/Leaflet.ImagePdf/) 
+See online demo [mandalorian-one.github.io/Leaflet.ImagePdf](https://mandalorian-one.github.io/Leaflet.ImagePdf/) 
 
 or clone and run demo locally:
 
@@ -69,7 +69,7 @@ imagePdf.setArea(L.LatLngBounds([]))
 
 ### Creating pdf document
 
-Tune some pdf options like page counts, margins, paper size, etc
+Tune some pdf options like page count, margins, paper size, etc
 ```javascript
 imagePdf.setPageCount(2)   // 2 pages
 imagePdf.setPageMargin(10) // mm
@@ -126,4 +126,62 @@ this.map.once("imagePdf:progress", function (data) {
    console.log(`Creating image ${p.itemNo+1} of ${p.totalItems} ...`);
   }
 })
+```
+
+### Plugin options
+
+You can pass a number of options:
+
+```javascript
+{
+        pageFormat: "A4",
+        pageOrientation: PageOrientationPortrait,
+        pageMargin: 10,         // pdf option, page margin in mm
+        areaPadding: 10,        // pdf option, add padding to the area in mm
+        pagingMethod: 'pages',  // pdf option, define paging method for multi-page pdf generation
+                                // (possible values 'pages' | 'scale'), it's better to use 'pages' because 'scale' method now is not properly tested
+        scale: 50000,           // pdf option, default starting scale for 'scale' paging method
+        pageCount: 1,           // pdf option, default pages count for 'pages' paging method
+        dpi: 300,               // pdf option, define max target images dpi, it defines how deep the map will be zoomed to create images
+                                // the resulting image dpi depends on available tiles images resolution and page size in mm
+                                // the better available dpi will be used
+                                // higher dpi value leads to downloading more tiles and greatly increase images generation time
+        maxZoom: null,          // define map maximum zoom level we can fall to load image tiles
+                                // if null it will be evaluated from map.getMaxZoom()
+                                // can be number, or function, that should return the number
+        outputFileName: "map.pdf", // can be with or without file extension
+        downloadOnFinish: false, // starts browser's file download process in order to save pdf file
+        tilesLoadingTimeout: 10000, // msec, timeout for tile loading on every page(image) generation
+        imageFormat: "jpeg",    // pdf and image option, 'jpeg' or 'png'
+        imagePixelRatio: 1,     // for generate images for retina screens. set to 2 or window.devicePixelRatio
+        showProgressSplashScreen: true,
+        progressSplashScreenStyle: progressSplashScreenDefaultStyle,
+        rectanglePreviewStyle: { // defines the style of area preview rectangle
+            stroke: true,
+            weight: 1,
+            opacity: 1,
+            color: "gray",
+            fillColor: "gray",
+            fillOpacity: 0.2
+        },
+        pdfFontSize: 15,            // default font size of text labels in pdf document
+        pdfPrintGraticule: true,    // isn;t implemented yet
+        pdfPrintScaleMeter: true,   // isn;t implemented yet
+        pdfSheetPageNumber: {       // add page number to a sheet at defined position
+            position: "bottomright",
+        },
+        pdfSheetAttribution: {      // add attribution text to a sheet at defined position
+            position: "topleft",
+            text: "Created with Leaflet.ImagePdf"
+        },
+        pdfDocumentProperties: {    // properties to add to the PDF document // name-to-value object structure
+            'creator': "Leaflet.ImagePdf"
+        },
+        excludeNodesWithCSS: ['div.leaflet-control-container', 'div.leaflet-control', 'div.pdf-progress-plug'], // exclude these dom nodes from the result images
+        pdfPageCb: null,        // callback function(pdf, pageNumber) that calls on every pdf page generation
+                                // you can use it to add you custom text or data to pdf pages (see jspdf spec on how to operate with pdf document)
+        nodeFilterCb: null,     // callback function(domNode) that calls on every dom element and should return true or false
+                                // in order to include or exclude element from images and pdf
+        debug: false,
+    }
 ```
