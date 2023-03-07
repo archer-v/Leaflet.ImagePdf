@@ -1,3 +1,12 @@
+/**
+ *      Leaflet.ImagePdf <https://github.com/mandalorian-one/Leaflet.ImagePdf>
+ *
+ *      MIT License http://www.opensource.org/licenses/mit-license.php
+ *      Copyright (c) 2023  Alexander Cherviakov, <https://github.com/mandalorian-one/>
+ *                          Northern Frontiers Pte Ltd, <https://northernfrontiers.com.fj/>
+ *
+ **/
+
 import "jspdf";
 //import * as htmlToImage from 'html-to-image';
 import {
@@ -257,7 +266,7 @@ L.Control.ImagePdf = L.Control.extend({
             L.rectangle(rect, this.debugRectStyle).addTo(this.debugRectGroup);
         }
 
-        let algorithm = this.rectanglesEvaluationMethod(this.area)
+        let algorithm = this._rectanglesEvaluationMethod(this.area)
         let computePageCount = function (scale) {
             return 0
         }
@@ -320,7 +329,7 @@ L.Control.ImagePdf = L.Control.extend({
         return Math.ceil(scale)
     },
 
-    rectanglesEvaluationMethod: function (LObject) {
+    _rectanglesEvaluationMethod: function (LObject) {
         if ( LObject instanceof L.LatLngBounds ||
              LObject instanceof L.Polygon ||
             (LObject instanceof L.Polyline && this.isPagesPaging() && this.pageCount == 1)) {
@@ -331,8 +340,9 @@ L.Control.ImagePdf = L.Control.extend({
         console.log("unknown geometry type")
         return AlgCoverUnknown
     },
+
     /**
-     * computes pages data according current map state and pages and pdf settings
+     * calcPdfPages computes pages data according current map state and pages/pdf settings
      * @returns {object} pages data that is used to page generation
      */
     calcPdfPages: function () {
@@ -360,7 +370,7 @@ L.Control.ImagePdf = L.Control.extend({
         pd.rects = []
         pd.images = []
 
-        let algorithm = this.rectanglesEvaluationMethod(this.area)
+        let algorithm = this._rectanglesEvaluationMethod(this.area)
         let getRectangles =
             (algorithm === AlgCoverArea) ? this._getBoxRectangles.bind(this) :
                 (algorithm === AlgCoverPath) ? this._getRouteRectangles.bind(this) :
@@ -474,7 +484,7 @@ L.Control.ImagePdf = L.Control.extend({
     },
 
     /**
-     * // calculates target map zoom level in order to scale image from current zoom level at targetScale
+     * // _calcTargetZoomAndScale calculates target map zoom level and scale factor from current zoom to target zoom in order to get image at targetScale
      * @param targetScale
      * @param round
      * @private
@@ -497,7 +507,7 @@ L.Control.ImagePdf = L.Control.extend({
     },
 
     /**
-     * shows pages preview rectangles on the map
+     * showPdfPages shows pages preview rectangles on the map
      * @returns {{hmmPaper, regionCenter: *, sWorld: (*|number), sPaper: number, pmmPaper: number, wmmPaper}}
      */
     showPdfPages: function (printData) {
@@ -517,6 +527,11 @@ L.Control.ImagePdf = L.Control.extend({
         return printData
     },
 
+    /**
+     * showImageRegions shows preview of image area rectangle on the map
+     * @param imageData
+     * @returns {null|*}
+     */
     showImageRegions: function (imageData) {
         if (this.area === null || this.status !== StatusReady) {
             console.error("pdf: is already in progress")
@@ -532,6 +547,7 @@ L.Control.ImagePdf = L.Control.extend({
 
         return imageData
     },
+
     /**
      * hides pages preview rectangles on the map
      */
@@ -539,6 +555,10 @@ L.Control.ImagePdf = L.Control.extend({
         this.rectGroup.clearLayers();
     },
 
+    /**
+     * _lockMap locks the map and change map state for images generation
+     * @private
+     */
     _lockMap: function() {
         this.savedMapState = {
             width: this.map.getContainer().style.width,
@@ -568,6 +588,10 @@ L.Control.ImagePdf = L.Control.extend({
         this.css.disabled = false
     },
 
+    /**
+     * _restoreMap restores the map after image generation
+     * @private
+     */
     _restoreMap: function () {
         this.map.getContainer().style.width = this.savedMapState.width;
         this.map.getContainer().style.height = this.savedMapState.height;
@@ -615,9 +639,9 @@ L.Control.ImagePdf = L.Control.extend({
     },
 
     /**
-     * starts a background pdf generation process, the map will be locked.
-     * subscribe to pdf events in order to control the progress and catch the results
-     * @returns {boolean} false if there are already running printing
+     * createPdf starts a background pdf creation process, the map will be locked.
+     * subscribe to events in order to control the progress and catch the results
+     * @returns {boolean} false if there are already running printing or something got wrong with
      */
     createPdf: function () {
         if (this.status !== StatusReady) {
@@ -637,6 +661,15 @@ L.Control.ImagePdf = L.Control.extend({
         this._createImages(pagesData.rects, pagesData.pagesToPrint, pagesData.targetZoom, this.imageFormat);
     },
 
+    /**
+     * createImage starts a background image creation process, the map will be locked.
+     * subscribe to events in order to control the progress and catch the results
+     * @param targetSizePx
+     * @param paddingPx
+     * @param extendToSquare
+     * @param performScaleToTargetSize
+     * @returns {boolean}
+     */
     createImage: function (targetSizePx, paddingPx, extendToSquare, performScaleToTargetSize = false) {
         if (this.status !== StatusReady) {
             return false
@@ -693,7 +726,7 @@ L.Control.ImagePdf = L.Control.extend({
 
     },
     /**
-     * aborts a running pdf or image generation
+     * abort aborts a running pdf or image generation
      */
     abort: function () {
         if (this.status !== StatusAtWork)
@@ -853,7 +886,7 @@ L.Control.ImagePdf = L.Control.extend({
 
         /**
          * it's better to use html-to-image or alternate package, but
-         * html-to-image package has a bug with resulting image (one tile is displayed on the map)
+         * html-to-image package has a bug with resulting image (only one tile image is displayed along all the map)
          * need to investigate
          */
         if (imageFormat === "jpeg") {
@@ -980,7 +1013,8 @@ L.Control.ImagePdf = L.Control.extend({
     },
 
     /**
-     * checks if all tiles is loaded
+     * _loadedTiles check a raster map loading process and returns array with current state of the map
+     *
      * @param map
      * @returns {number[]}
      * @private
@@ -1006,7 +1040,7 @@ L.Control.ImagePdf = L.Control.extend({
     },
 
     fireEvent: function (name, data) {
-        this.map.fire("pdf:"+ name, data)
+        this.map.fire("imagePdf:"+ name, data)
     },
 
     fireStarted: function (data) {
@@ -1025,6 +1059,8 @@ L.Control.ImagePdf = L.Control.extend({
         this.fireEvent("aborted", {reason: reason, data: data})
     },
 
+    // temporary disabled
+    // todo need to refactored
     _getAttribution: function() {
         let attrib = undefined;
         this.map.eachLayer(function(layer) {
