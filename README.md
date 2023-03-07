@@ -53,50 +53,77 @@ that was borrowed from [leaflet-route-print](https://hersle.github.io/leaflet-ro
  
 The plugin is under development now and api specification is unstable
 
-## Usage and documentation
+## Usage
 
+Initalize and configure plugin
 ```javascript
-
-// Initialize and configure Leaflet map object
-let map = ...
-
-// Initalize and configure plugin
 let imagePdf = L.imagePdf(map, {
-  	.... some options ...
+//  	.... some options ...
 })
+```
 
-// set the object describing the area (L.LatLngBounds or L.polygon or L.polyline objects)
+Describe the area, using L.LatLngBounds or L.polygon or L.polyline objects
+```javascript
 imagePdf.setArea(L.LatLngBounds([]))
+```
 
-// for pdf creating
-// show pages rectangles to preview the area on a map, if needed
+### Creating pdf document
+
+Tune some pdf options like page counts, margins, paper size, etc
+```javascript
+imagePdf.setPageCount(2)   // 2 pages
+imagePdf.setPageMargin(10) // mm
+```
+
+Show pages preview on the map if needed
+```javascript
 imagePdf.showPdfPages()
-// create pdf document
-imagePdf.createPdf()
+```
 
-// for image creating
+Create pdf document
+```javascript
+imagePdf.createPdf()
+```
+
+### Creating jpeg/png image
+
+Tune some image options like image format, etc
+```javascript
+imagePdf.setImageFormat('jpeg')
+```
+
+Show the image area on the map if needed
+```javascript
 let imageSizeInPixels = 1000;
 let areaPaddingInPixels = 10;
 let extendToSquareBooleanOption = false;
-// show area rectangle to preview the area on a map, if needed
-imagePdf.showImageRegions( this.imagePdf.calcImages(imageSizeInPixels, areaPaddingInPixels, extendToSquareBooleanOption) )
-// create image
-imagePdf.createImage(imageSizeInPixels, areaPaddingInPixels, extendToSquareBooleanOption)
+imagePdf.showImageRegions( imagePdf.calcImages(imageSizeInPixels, areaPaddingInPixels, extendToSquareBooleanOption) )
+```
 
-// subscribe to events
-// on start image generating process
+```javascript
+imagePdf.createImage(imageSizeInPixels, areaPaddingInPixels, extendToSquareBooleanOption)
+```
+
+### Susbscribe to events
+
+```javascript
 this.map.once("imagePdf:start", function (data) {
-  console.log("start")
+  console.log("started")
 })
 
-// on finish image generating process
 this.map.once("imagePdf:finish", function (data) {
   console.log("finished")
 })
 
-// on progress events
 this.map.once("imagePdf:progress", function (data) {
-  console.log("progress")
+  if (p.operation === "page") {
+			console.log(`Creating page ${p.itemNo+1} of ${p.totalItems} ...`);
+		}
+  if (p.operation === "tile") {
+   console.log(`Loaded ${p.itemNo+1} tiles from ${p.totalItems}`);
+		}
+  if (p.operation === "tile") {
+   console.log(`Creating image ${p.itemNo+1} of ${p.totalItems} ...`);
+  }
 })
-
 ```
