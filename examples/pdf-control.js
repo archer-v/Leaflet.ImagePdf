@@ -148,6 +148,7 @@ L.Control.PdfControl = L.Control.extend({
 		this.inputPrint = this._createElement("input", {id: "input-print", type: "button", value: "Print"}, {display: "inline", fontWeight: "bold", backgroundColor: "limegreen", borderRadius: "5px", border: "none"});
 		this.inputPrint.title = "Print the map as a PDF file and automatically open it when complete.";
 		this.printStatus = this._createElement("span", {});
+		this.printStatus.style.color = "orange";
 		this.inputPagesToPrint = this._createElement("input", {id: "input-pages", type: "text"});
 		this.inputPagesToPrint.title = "Comma-separated list of (ranges of) pages to print. For example, \"1, 3-5, 7\" prints page 1, 3, 4, 5 and 7. Clear to reset to all pages.";
 		this.inputPagesToPrint.addEventListener("change", function() {
@@ -238,23 +239,31 @@ L.Control.PdfControl = L.Control.extend({
 			this.map.on("zoomend", this.updatePreview, this);
 		}
 
-		this.map.on("pdf:progress", this.onProgress, this)
+		this.map.on("imagePdf:progress", this.onProgress, this)
 
 		this.updatePreview()
 		return divWrapper;
 	},
 
 	onProgress: function (p) {
-		if (p.operation === "image") {
-			this.setPrintStatus(`Creating image ${p.itemNo+1} of ${p.totalItems} ...`);
-		} else if (p.operation === "page") {
-			this.setPrintStatus(`Creating page ${p.itemNo+1} of ${p.totalItems} ...`);
+		if (p.operation === "page") {
+			this.showProgress(`Creating page ${p.itemNo+1} of ${p.totalItems} ...`);
+			return
 		}
+		let percent = 0
+		if (p.operation === "image") {
+			this.progressCurrentImageNo = p.itemNo+1
+			this.progressTotalImages = p.totalItems
+		}
+		if (p.operation === "tile") {
+			percent = Math.ceil((p.itemNo / p.totalItems) * 100)
+		}
+		this.showProgress(`Creating image ${this.progressCurrentImageNo} of ${this.progressTotalImages}: ${percent}%`);
 	},
 
 	onRemove: function () {
 		// remove events
-		this.map.off("pdf:progress", this.onProgress)
+		this.map.off("imagePdf:progress", this.onProgress)
 		this.map.off("zoomend", this.updatePreview, this);
 		this.pdf.hideImageRegions()
 
@@ -263,7 +272,7 @@ L.Control.PdfControl = L.Control.extend({
 		// 		remove events handlers
 	},
 
-	setPrintStatus: function(status) {
+	showProgress: function(status) {
 		this.printStatus.innerHTML = status == undefined ? "" : " " + status;
 	},
 
@@ -298,7 +307,7 @@ L.Control.PdfControl = L.Control.extend({
 		if (pd === null) {
 			this.inputDPI.innerHTML = ""
 			this.inputPagesToPrint.value = ""
-			this.setPrintStatus(`area isn't defined`);
+			this.showProgress(`area isn't defined`);
 			return
 		}
 
@@ -324,13 +333,13 @@ L.Control.PdfControl = L.Control.extend({
 		var hue = Math.min(Math.floor((hue2 - hue1) * (pd.dpi - dpi1) / (dpi2 - dpi1)), hue2); // restrict to hue2
 		this.inputDPI.style.color = `hsl(${hue}, 100%, 50%)`;
 
-		this.setPrintStatus();
+		this.showProgress();
 	},
 
 	createPdf: function() {
 		let backupButtonHandler
 		let backupButtonColor
-		this.map.once("pdf:finish", function (data) {
+		this.map.once("imagePdf:finish", function (data) {
 			this.inputPrint.value = "Create pdf";
 			this.inputPrint.style.backgroundColor = backupButtonColor;
 			this.inputPrint.onclick = backupButtonHandler;
@@ -339,10 +348,10 @@ L.Control.PdfControl = L.Control.extend({
 				this.downloadLink.href = URL.createObjectURL(data.blob);
 				this.downloadLink.click(); // download
 			} else {
-				this.setPrintStatus("Aborted because of error");
+				this.showProgress("Aborted because of error");
 			}
 		}.bind(this))
-		this.map.once("pdf:start", function (pagesData) {
+		this.map.once("imagePdf:start", function (pagesData) {
 			backupButtonHandler = this.inputPrint.onclick
 			backupButtonColor = this.inputPrint.style.backgroundColor
 

@@ -79,8 +79,13 @@ L.Control.ImageControl = L.Control.extend({
 		this.inputPrint = this._createElement("input", {id: "input-create-image", type: "button", value: "Create image"}, {display: "inline", fontWeight: "bold", backgroundColor: "limegreen", borderRadius: "5px", border: "none"});
 		this.inputPrint.title = "Create the image and automatically download it when complete.";
 		this.printStatus = this._createElement("span", {});
+		this.printStatus.style.color = "orange";
 
-		container.append(this.inputPrint)
+		l = this._createElement("label", {}, {fontWeight: "normal"});
+		l.append(this.printStatus);
+		p = this._createElement("p");
+		p.append(this.inputPrint, l);
+		container.append(p);
 
 		this.downloadLink = this._createElement("a", {"download": this.options.fileName}, {"display": "none"});
 		container.append(this.downloadLink);
@@ -119,7 +124,7 @@ L.Control.ImageControl = L.Control.extend({
 
 		this.inputPrint.onclick = this.createImage.bind(this);
 
-		this.map.on("pdf:progress", this.onProgress, this)
+		this.map.on("imagePdf:progress", this.onProgress, this)
 
 		this.updatePreview()
 
@@ -127,25 +132,20 @@ L.Control.ImageControl = L.Control.extend({
 	},
 
 	onProgress: function (p) {
-		if (p.operation === "image") {
-			this.setPrintStatus(`Creating image ${p.itemNo+1} of ${p.totalItems} ...`);
-		} else if (p.operation === "page") {
-			this.setPrintStatus(`Creating page ${p.itemNo+1} of ${p.totalItems} ...`);
+		if (p.operation === "tile") {
+			let percent = Math.ceil((p.itemNo / p.totalItems) * 100)
+			this.showProgress(`Creating image: ${percent}%`);
 		}
 	},
 
 	onRemove: function () {
 		// remove events
-		this.map.off("pdf:progress", this.onProgress)
+		this.map.off("imagePdf:progress", this.onProgress)
 		this.imagePdf.hideImageRegions()
 
 		// todo need more accurate cleanup:
 		//  	hide everything that may be visible
 		// 		remove events handlers
-	},
-
-	setPrintStatus: function(status) {
-		this.printStatus.innerHTML = status == undefined ? "" : " " + status;
 	},
 
 	updatePreview: function(ev) {
@@ -194,7 +194,7 @@ L.Control.ImageControl = L.Control.extend({
 	createImage: function() {
 		let backupButtonHandler
 		let backupButtonColor
-		this.map.once("pdf:finish", function (data) {
+		this.map.once("imagePdf:finish", function (data) {
 			this.inputPrint.value = "Create image";
 			this.inputPrint.style.backgroundColor = backupButtonColor;
 			this.inputPrint.onclick = backupButtonHandler;
@@ -202,11 +202,12 @@ L.Control.ImageControl = L.Control.extend({
 			if (data.blob) {
 				this.downloadLink.href = data.blob;
 				this.downloadLink.click(); // download
+				this.showProgress("Success");
 			} else {
-				this.setPrintStatus("Aborted because of error");
+				this.showProgress("Aborted because of error");
 			}
 		}.bind(this))
-		this.map.once("pdf:start", function (pagesData) {
+		this.map.once("imagePdf:start", function (pagesData) {
 			backupButtonHandler = this.inputPrint.onclick
 			backupButtonColor = this.inputPrint.style.backgroundColor
 
@@ -224,6 +225,10 @@ L.Control.ImageControl = L.Control.extend({
 			this.inputSquare.checked,
 			true
 		)
+	},
+
+	showProgress: function(status) {
+		this.printStatus.innerHTML = status == undefined ? "" : " " + status;
 	},
 
 	setArea: function(area) {
