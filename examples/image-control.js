@@ -202,7 +202,7 @@ L.Control.ImageControl = L.Control.extend({
 			if (data.blob) {
 				this.downloadLink.href = data.blob;
 				this.downloadLink.click(); // download
-				this.showProgress("Success");
+				this.showProgress("Success, see download folder");
 			} else {
 				this.showProgress("Aborted because of error");
 			}
