@@ -3,6 +3,20 @@
 Leaflet plugin that creates an jpeg/png image or pdf document of selected map region directly from a browser. 
 The image also includes all rendered vector layers, markers, tooltips, images, svg drawing, etc. Size, quality (dpi) and format can be defined in plugin options. 
 
+## Demonstration
+
+[mandalorian-one.github.io/Leaflet.ImagePdf](https://mandalorian-one.github.io/Leaflet.ImagePdf/) 
+
+or clone and run demo locally:
+
+```console
+git clone https://github.com/mandalorian-one/Leaflet.ImagePdf.git
+cd Leaflet.ImagePdf
+./examples/demo.sh
+```
+
+## General information
+
 Pdf features: 
 - predefined page sizes (A0-A10, B0-B10, etc) and custom page sizes defined in mm
 - landscape and portrait page orientations
@@ -38,3 +52,51 @@ You can implement your own UI control or took it from an example (see examples f
 that was borrowed from [leaflet-route-print](https://hersle.github.io/leaflet-route-print/) with some refactoring. 
  
 The plugin is under development now and api specification is unstable
+
+## Usage and documentation
+
+```javascript
+
+// Initialize and configure Leaflet map object
+let map = ...
+
+// Initalize and configure plugin
+let imagePdf = L.imagePdf(map, {
+  	.... some options ...
+})
+
+// set the object describing the area (L.LatLngBounds or L.polygon or L.polyline objects)
+imagePdf.setArea(L.LatLngBounds([]))
+
+// for pdf creating
+// show pages rectangles to preview the area on a map, if needed
+imagePdf.showPdfPages()
+// create pdf document
+imagePdf.createPdf()
+
+// for image creating
+let imageSizeInPixels = 1000;
+let areaPaddingInPixels = 10;
+let extendToSquareBooleanOption = false;
+// show area rectangle to preview the area on a map, if needed
+imagePdf.showImageRegions( this.imagePdf.calcImages(imageSizeInPixels, areaPaddingInPixels, extendToSquareBooleanOption) )
+// create image
+imagePdf.createImage(imageSizeInPixels, areaPaddingInPixels, extendToSquareBooleanOption)
+
+// subscribe to events
+// on start image generating process
+this.map.once("imagePdf:start", function (data) {
+  console.log("start")
+})
+
+// on finish image generating process
+this.map.once("imagePdf:finish", function (data) {
+  console.log("finished")
+})
+
+// on progress events
+this.map.once("imagePdf:progress", function (data) {
+  console.log("progress")
+})
+
+```
