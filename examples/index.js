@@ -60,8 +60,8 @@ imageControl = new L.Control.ImageControl({imagePdf: imagePdf});
 geometrySelector = new L.Control.GeometrySelector(geometries, selectGeometry, pdfControl, imageControl).addTo(map);
 geometrySelector.updateExportMode();
 
-addGeometry(L.rectangle, [[65.41, 12.55], [65.405, 12.53]])
-addGeometry(L.polygon, [[65.415, 12.55], [65.411, 12.52], [65.415, 12.52]])
+addGeometry(L.polygon, [[65.41, 12.55], [65.407, 12.53], [65.405, 12.54], [65.406, 12.545]])
+addGeometry(L.polygon, [[65.414, 12.55], [65.411, 12.515], [65.415, 12.52]])
 selectGeometry(0)
 
 L.marker([65.412, 12.54]).addTo(map)
