@@ -1,6 +1,14 @@
+/**
+ *      Leaflet.ImagePdf <https://github.com/mandalorian-one/Leaflet.ImagePdf>
+ *
+ *      MIT License http://www.opensource.org/licenses/mit-license.php
+ *      Copyright (c) 2023  Alexander Cherviakov, <https://github.com/mandalorian-one/>
+ *                          Northern Frontiers Pte Ltd, <https://northernfrontiers.com.fj/>
+ *                          Herman Sletmoen, <https://github.com/hersle/leaflet-route-print>
+ **/
 
 /**
- * areaRectanglesCount counts rectangles count need to cover the area
+ * areaRectanglesCount counts rectangles need to cover the area
  * @param tlc {L.Point} top left corner
  * @param brc {L.Point} top right corner
  * @param w {number} rectangle width

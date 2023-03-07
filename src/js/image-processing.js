@@ -1,4 +1,19 @@
+/**
+ *      Leaflet.ImagePdf <https://github.com/mandalorian-one/Leaflet.ImagePdf>
+ *
+ *      MIT License http://www.opensource.org/licenses/mit-license.php
+ *      Copyright (c) 2023  Alexander Cherviakov, <https://github.com/mandalorian-one/>
+ *                          Northern Frontiers Pte Ltd, <https://northernfrontiers.com.fj/>
+ *
+ **/
 
+/**
+ * resizeImage resizes an image to a new size and returns promise with result of canvas.toDataURL
+ * @param imageBlob
+ * @param newWidth
+ * @param newHeight
+ * @returns {Promise<unknown>}
+ */
 export function resizeImage(imageBlob, newWidth, newHeight) {
     return new Promise((resolve, reject) => {
         const canvas = document.createElement('canvas');
