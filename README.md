@@ -122,7 +122,7 @@ this.map.once("imagePdf:progress", function (data) {
   if (p.operation === "tile") {
    console.log(`Loaded ${p.itemNo+1} tiles from ${p.totalItems}`);
 		}
-  if (p.operation === "tile") {
+  if (p.operation === "image") {
    console.log(`Creating image ${p.itemNo+1} of ${p.totalItems} ...`);
   }
 })
