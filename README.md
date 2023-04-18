@@ -5,12 +5,12 @@ The image also includes all rendered vector layers, markers, tooltips, images, s
 
 ## Demonstration
 
-See online demo [mandalorian-one.github.io/Leaflet.ImagePdf](https://mandalorian-one.github.io/Leaflet.ImagePdf/) 
+See online demo [archer-v.github.io/Leaflet.ImagePdf](https://archer-v.github.io/Leaflet.ImagePdf/) 
 
 or clone and run demo locally:
 
 ```console
-git clone https://github.com/mandalorian-one/Leaflet.ImagePdf.git
+git clone https://github.com/archer-v/Leaflet.ImagePdf.git
 cd Leaflet.ImagePdf
 ./examples/demo.sh
 ```
