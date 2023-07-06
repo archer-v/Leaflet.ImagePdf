@@ -1024,8 +1024,10 @@ L.Control.ImagePdf = L.Control.extend({
         for (let l in map._layers) {
             let layer = map._layers[l];
             if (layer._url || layer._mutant) {
-                totalTiles += layer._level.el.childNodes.length
-                loadedTiles += layer._level.el.querySelectorAll("img.leaflet-tile-loaded").length
+                if (layer._level) {
+                    totalTiles += layer._level.el.childNodes.length
+                    loadedTiles += layer._level.el.querySelectorAll("img.leaflet-tile-loaded").length
+                }
                 if (layer._loading && stillLoadingLayer === null) {
                     stillLoadingLayer = layer
                 }
