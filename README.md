@@ -6,7 +6,7 @@ A leaflet plugin that enables the creation of a JPEG/PNG image or PDF document o
 
 See online demo [archer-v.github.io/Leaflet.ImagePdf](https://archer-v.github.io/Leaflet.ImagePdf/) 
 
-or clone and run demo locally:
+or clone and run local demo:
 
 ```console
 git clone https://github.com/archer-v/Leaflet.ImagePdf.git
