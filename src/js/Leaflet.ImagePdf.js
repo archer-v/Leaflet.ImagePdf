@@ -711,7 +711,7 @@ L.Control.ImagePdf = L.Control.extend({
             } else {
                 // todo there are some possible improvement to reduce vector layers blur on rendered image resizing.
                 //      we can render vector layers separately at target scale and than mix them with raster layers
-                resizeImage(data.detail.images[0], resultWidth, resultHeight).then(function (imageUrl) {
+                resizeImage(data.detail.images[0], resultWidth, resultHeight, 'image/'+this.imageFormat).then(function (imageUrl) {
                         this._startDownload(imageUrl, this.imageFormat === 'jpeg' ? 'jpg' : this.imageFormat)
                         finish(imageUrl)
                     }.bind(this)

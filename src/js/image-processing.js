@@ -12,9 +12,10 @@
  * @param imageBlob
  * @param newWidth
  * @param newHeight
+ * @param targetMimeType
  * @returns {Promise<unknown>}
  */
-export function resizeImage(imageBlob, newWidth, newHeight) {
+export function resizeImage(imageBlob, newWidth, newHeight, targetMimeType) {
     return new Promise((resolve, reject) => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
@@ -25,7 +26,7 @@ export function resizeImage(imageBlob, newWidth, newHeight) {
         createImageBitmap(imageBlob, {resizeWidth: newWidth, resizeHeight: newHeight, resizeQuality: "high"})
             .then(imageBitmap => {
                 ctx.drawImage(imageBitmap, 0, 0)
-                resolve(canvas.toDataURL(imageBlob.type,  0.9))
+                resolve(canvas.toDataURL(targetMimeType,  0.9))
             }).catch( function (er) {
                 reject(er)
             })
